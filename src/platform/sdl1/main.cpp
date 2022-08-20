@@ -214,7 +214,11 @@ int main() {
     Game::init((const char *)NULL);
 
     GAPI::resize();
-    GAPI::swColor = (unsigned int*)screen->pixels;
+#ifdef __MINT__
+	GAPI::swColor = (unsigned int*)screen->pixels;
+#else
+	GAPI::swColor = (uint16*)screen->pixels;
+#endif
 
 //    sndInit();
 
