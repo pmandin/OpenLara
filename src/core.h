@@ -115,7 +115,12 @@
     #define INV_GAMEPAD_ONLY
 #elif __linux__
     #define _OS_LINUX 1
-    #define _GAPI_GL  1
+	// For testing SDL1 with linux
+//	#ifdef __SDL1__
+//		#define _GAPI_SW  1
+//	#else
+		#define _GAPI_GL  1
+//	#endif
 
     #define INV_VIBRATION
     #define INV_QUALITY
@@ -210,6 +215,9 @@
 #elif _X360
     #define _OS_X360  1
     // TODO
+#elif __MINT__
+	#define _GAPI_SW	1
+	#undef OS_PTHREAD_MT
 #elif __NDLESS__
     #define _OS_TNS   1
     #define _GAPI_SW  1
@@ -276,7 +284,7 @@ enum InputKey { ikNone,
     ik0, ik1, ik2, ik3, ik4, ik5, ik6, ik7, ik8, ik9,
     ikA, ikB, ikC, ikD, ikE, ikF, ikG, ikH, ikI, ikJ, ikK, ikL, ikM,
     ikN, ikO, ikP, ikQ, ikR, ikS, ikT, ikU, ikV, ikW, ikX, ikY, ikZ,
-    ikN0, ikN1, ikN2, ikN3, ikN4, ikN5, ikN6, ikN7, ikN8, ikN9, ikNAdd, ikNSub, ikNMul, ikNDiv, ikNDot, 
+    ikN0, ikN1, ikN2, ikN3, ikN4, ikN5, ikN6, ikN7, ikN8, ikN9, ikNAdd, ikNSub, ikNMul, ikNDiv, ikNDot,
     ikF1, ikF2, ikF3, ikF4, ikF5, ikF6, ikF7, ikF8, ikF9, ikF10, ikF11, ikF12,
     ikMinus, ikPlus, ikLSB, ikRSB, ikSlash, ikBSlash, ikComma, ikDot, ikTilda, ikColon, ikApos, ikPrev, ikNext, ikHome, ikEnd, ikDel, ikIns, ikBack,
 // mouse
@@ -284,7 +292,7 @@ enum InputKey { ikNone,
 // touch
     ikTouchA, ikTouchB, ikTouchC, ikTouchD, ikTouchE, ikTouchF,
 
-    ikMAX 
+    ikMAX
 };
 
 enum JoyKey {
@@ -299,7 +307,7 @@ enum ControlKey {
 struct KeySet {
     uint8 key;
     uint8 joy;
-    
+
     KeySet() {}
     KeySet(InputKey key, JoyKey joy) : key(key), joy(joy) {}
 };
@@ -318,16 +326,16 @@ namespace Core {
 
     struct Mutex {
         void *obj;
-    
+
         Mutex()       { obj = osMutexInit();          }
         ~Mutex()      { if (obj) osMutexFree(obj);    }
         void lock()   { if (obj) osMutexLock(obj);    }
         void unlock() { if (obj) osMutexUnlock(obj);  }
     };
-    
+
     struct Lock {
         Mutex &mutex;
-    
+
         Lock(Mutex &mutex) : mutex(mutex) { mutex.lock(); }
         ~Lock() { mutex.unlock(); }
     };
@@ -537,7 +545,7 @@ enum RenderState {
 // Texture image format
 enum TexFormat {
     FMT_LUMINANCE,
-    FMT_RGBA, 
+    FMT_RGBA,
     FMT_RGB16,
     FMT_RGBA16,
     FMT_RG_FLOAT,
@@ -717,7 +725,7 @@ namespace Core {
     enum Pass { passCompose, passShadow, passAmbient, passSky, passWater, passFilter, passGUI, passMAX } pass;
 
     GAPI::Texture *defaultTarget;
-    
+
     int32   renderState;
 
     struct Active {
@@ -749,7 +757,7 @@ namespace Core {
         int32       basisCount;
         Basis       *basis;
     } active;
-    
+
     struct ReqTarget {
         GAPI::Texture *texture;
         uint32  op;
@@ -897,7 +905,7 @@ namespace Core {
         LOG("  border color   : %s\n", support.texBorder     ? "true" : "false");
         LOG("  max level      : %s\n", support.texMaxLevel   ? "true" : "false");
         LOG("  anisotropic    : %d\n", support.maxAniso);
-        LOG("  float textures : float = %s, half = %s\n", 
+        LOG("  float textures : float = %s, half = %s\n",
             support.colorFloat ? "full" : (support.texFloat ? (support.texFloatLinear ? "linear" : "nearest") : "false"),
             support.colorHalf  ? "full" : (support.texHalf  ? (support.texHalfLinear  ? "linear" : "nearest") : "false"));
         LOG("\n");
@@ -1173,7 +1181,7 @@ namespace Core {
 
         if (mask & RS_DEPTH_TEST)
             GAPI::setDepthTest((renderState & RS_DEPTH_TEST) != 0);
-        
+
         if (mask & RS_DEPTH_WRITE)
             GAPI::setDepthWrite((renderState & RS_DEPTH_WRITE) != 0);
 
