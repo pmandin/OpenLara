@@ -9,7 +9,7 @@
 
 //#define DITHER_FILTER
 
-#if defined(_OS_LINUX) || defined(_OS_TNS)
+#if defined(_OS_LINUX) || defined(_OS_TNS) || defined(__SDL1__)
     #define COLOR_16
 #endif
 
@@ -21,7 +21,7 @@
         #define COLOR_FMT_555
         #define CONV_COLOR(r,g,b) (((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3))
     #endif
-#else 
+#else
     #define COLOR_FMT_888
     #define CONV_COLOR(r,g,b) ((r << 16) | (g << 8) | b)
 #endif
@@ -526,7 +526,7 @@ namespace GAPI {
            \  /\
             \   \ <-- quad
            p \/__\ o
-             /\  / 
+             /\  /
                \/ <-- bottom triangle
                b
     */
