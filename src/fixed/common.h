@@ -157,6 +157,20 @@
         MARS_CMD_CLEAR,
         MARS_CMD_FLUSH
     };
+#elif defined(__SDL1__)
+    #define USE_DIV_TABLE
+//    #define CPU_BIG_ENDIAN
+
+//    #define MODE13
+
+    #define MODEHW
+    #define GAPI_GL1
+
+	extern int FRAME_WIDTH;
+    extern int FRAME_HEIGHT;
+    extern float FRAME_PERSP;
+
+    #define USE_FMT     (LVL_FMT_PHD)
 #else
     #error unsupported platform
 #endif
@@ -177,7 +191,7 @@
         #define LOG(...)    printf(__VA_ARGS__)
     #endif
 #else
-    #define LOG()
+    #define LOG(...) printf(__VA_ARGS__)
 #endif
 
 #if !defined(__3DO__)
@@ -245,6 +259,21 @@
     #define FAST_HITMASK
 #endif
 
+#ifdef __SDL1__
+// hide dead enemies after a while to reduce the number of polygons on the screen
+    #define HIDE_CORPSES (30*10) // 10 sec
+// replace trap flor geometry by two flat quads in the static state
+    #define LOD_TRAP_FLOOR
+// disable some plants environment to reduce overdraw of transparent geometry
+    #define NO_STATIC_MESH_PLANTS
+// the maximum of active enemies
+    #define MAX_ENEMIES 3
+// visibility distance
+    #define VIEW_DIST (1024 * 10)
+// skip collideSpheres for enemies
+    #define FAST_HITMASK
+#endif
+
 #ifndef NAV_STEPS
     #define NAV_STEPS 5
 #endif
@@ -298,7 +327,11 @@ typedef uint16             divTableInt;
     typedef uint8 ColorIndex;
 #endif
 
+#ifdef __SDL1__
+#define ADDR_ALIGN4(x)	x
+#else
 #define ADDR_ALIGN4(x)  ((uint8*)x += ((intptr_t(x) + 3) & ~3) - intptr_t(x))
+#endif
 
 //#include <new>
 inline void* operator new(size_t, void *ptr)
@@ -318,6 +351,8 @@ X_INLINE int32 abs(int32 x) {
     #define int2str(x,str) sprintf(str, "%d", x)
 #elif defined(__TNS__)
     #define int2str(x,str) __itoa(x, str, 10)
+#elif defined(__SDL1__)
+    #define int2str(x,str) sprintf(str, "%d", x)
 #else
     #define int2str(x,str) _itoa(x, str, 10)
 #endif
@@ -414,6 +449,14 @@ extern int32 fps;
     #define SND_SAMPLES      1024
     #define SND_OUTPUT_FREQ  11025
     #define SND_SAMPLE_FREQ  11025
+    #define SND_ENCODE(x)    ((x) + 128)
+    #define SND_DECODE(x)    ((x) - 128)
+    #define SND_MIN          -128
+    #define SND_MAX          127
+#elif defined(__SDL1__)
+    #define SND_SAMPLES      1024
+    #define SND_OUTPUT_FREQ  22050
+    #define SND_SAMPLE_FREQ  22050
     #define SND_ENCODE(x)    ((x) + 128)
     #define SND_DECODE(x)    ((x) - 128)
     #define SND_MIN          -128
@@ -875,7 +918,7 @@ struct RoomInfo
 
     uint16 quadsCount;
     uint16 trianglesCount;
-    
+
     uint16 verticesCount;
     uint16 spritesCount;
 
@@ -897,7 +940,7 @@ struct CollisionInfo;
 struct Room {
     ItemObj* firstItem;
     const RoomInfo* info;
-    const Sector* sectors; // == info->sectors (const) by default (see roomModify) 
+    const Sector* sectors; // == info->sectors (const) by default (see roomModify)
 
     RoomData data;
 
@@ -1486,7 +1529,7 @@ struct ExtraInfoLara
     int16 swimTimer;
     uint8 weaponState;
     uint8 vSpeedHack;
-    
+
     int16 moveAngle;
     int16 hitFrame;
 
@@ -1524,7 +1567,7 @@ struct ExtraInfoLara
         bool aim;
         bool useBasis;
     };
-    
+
     Arm armR;
     Arm armL;
 
@@ -1868,13 +1911,13 @@ enum SoundID
     SND_NO              = 2,
 
     SND_LANDING         = 4,
-        
+
     SND_DRAW            = 6,
     SND_HOLSTER         = 7,
     SND_PISTOLS_SHOT    = 8,
     SND_SHOTGUN_RELOAD  = 9,
     SND_RICOCHET        = 10,
-        
+
     SND_HIT_BEAR        = 16,
     SND_HIT_WOLF        = 20,
 
@@ -1883,15 +1926,15 @@ enum SoundID
     SND_DAMAGE          = 31,
 
     SND_SPLASH          = 33,
-        
+
     SND_BUBBLE          = 37,
-         
+
     SND_UZIS_SHOT       = 43,
     SND_MAGNUMS_SHOT    = 44,
     SND_SHOTGUN_SHOT    = 45,
     SND_EMPTY           = 48,
     SND_HIT_UNDERWATER  = 50,
-        
+
     SND_UNDERWATER      = 60,
 
     SND_BOULDER         = 70,
@@ -1901,7 +1944,7 @@ enum SoundID
     SND_HIT_LION        = 85,
 
     SND_HIT_RAT         = 95,
-        
+
     SND_LIGHTNING       = 98,
     SND_ROCK            = 99,
 
@@ -1917,7 +1960,7 @@ enum SoundID
     SND_INV_WEAPON      = 114,
     SND_INV_PAGE        = 115,
     SND_HEALTH          = 116,
-        
+
     SND_STAIRS2SLOPE    = 119,
 
     SND_NATLA_SHOT      = 123,
@@ -1926,11 +1969,11 @@ enum SoundID
 
     SND_HIT_ADAM        = 142,
     SND_STOMP           = 147,
-        
+
     SND_LAVA            = 149,
     SND_FLAME           = 150,
     SND_DART            = 151,
-        
+
     SND_TNT             = 170,
     SND_MUTANT_DEATH    = 171,
     SND_SECRET          = 173,
@@ -2742,7 +2785,7 @@ vec3i boxPushOut(const AABBi &a, const AABBi &b);
     //#define sphereIsVisible         sphereIsVisible_asm
     //#define flush                   flush_asm
 
-    extern "C" 
+    extern "C"
     {
         void matrixPush_asm();
         void matrixSetIdentity_asm();
@@ -2896,7 +2939,7 @@ const void* osLoadLevel(LevelID id);
     #endif
 
     extern uint32 gCounters[CNT_MAX];
-    
+
     #if defined(__3DO__) || defined(__32X__) // should be first, armcpp bug (#elif)
         extern int32 g_timer;
 
@@ -2936,8 +2979,8 @@ const void* osLoadLevel(LevelID id);
             REG_TM2CNT_H = 0;\
         }
     #else
-        #define PROFILE_START() aaa
-        #define PROFILE_STOP(value) bbb
+        #define PROFILE_START() { } //aaa
+        #define PROFILE_STOP(value) { } //bbb
     #endif
 
     struct ProfileCounter

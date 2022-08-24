@@ -2,8 +2,14 @@
 #define H_GL1
 
 #include <common.h>
-#include <gl/GL.h>
-#include <gl/GLU.h>
+#ifdef __SDL1__
+#include <SDL.h>
+#define NO_SDL_GLEXT
+#include <SDL_opengl.h>
+#else
+#include <GL/gl.h>
+#endif
+#include <GL/glu.h>
 
 #define FIX2FLT (1.0f / 0x4000)
 
@@ -11,6 +17,9 @@
 extern HWND hWnd;
 extern HDC hDC;
 HGLRC hRC;
+#endif
+
+#ifdef GAPI_GL1
 
 float FRAME_PERSP;
 
@@ -46,6 +55,9 @@ struct RoomInst
 */
 void renderInit()
 {
+#ifdef __SDL1__
+	// OK
+#elif __WIN32__
     PIXELFORMATDESCRIPTOR pfd;
     memset(&pfd, 0, sizeof(pfd));
     pfd.nSize      = sizeof(pfd);
@@ -63,6 +75,7 @@ void renderInit()
     hRC = wglCreateContext(hDC);
 
     wglMakeCurrent(hDC, hRC);
+#endif
 
     glClearColor(0, 0, 0, 1);
 
@@ -85,14 +98,22 @@ void renderInit()
 
 void renderFree()
 {
+#ifdef __SDL1__
+	// OK
+#elif __WIN32__
     wglMakeCurrent(0, 0);
     wglDeleteContext(hRC);
     ReleaseDC(hWnd, hDC);
+#endif
 }
 
 void renderSwap()
 {
+#ifdef __SDL1__
+	SDL_GL_SwapBuffers();
+#elif __WIN32__
     SwapBuffers(hDC);
+#endif
 
     float aspect = float(FRAME_WIDTH) / float(FRAME_HEIGHT);
     FRAME_PERSP = aspect / tanf(60.0f * 0.5f * 3.1495f / 180.0f);
