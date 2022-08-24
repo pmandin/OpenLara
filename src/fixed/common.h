@@ -31,7 +31,21 @@
 
 #define FIXED_SHIFT     14
 
-#if defined(__WIN32__)
+#if defined(__SDL1__) || defined(__SDL2__)
+    #define USE_DIV_TABLE
+//    #define CPU_BIG_ENDIAN
+
+//    #define MODE13
+
+    #define MODEHW
+    #define GAPI_GL1
+
+	extern int FRAME_WIDTH;
+    extern int FRAME_HEIGHT;
+    extern float FRAME_PERSP;
+
+    #define USE_FMT     (LVL_FMT_PHD)
+#elif defined(__WIN32__)
     #define USE_DIV_TABLE
     #define MODEHW
     #define GAPI_GL1
@@ -157,20 +171,6 @@
         MARS_CMD_CLEAR,
         MARS_CMD_FLUSH
     };
-#elif defined(__SDL1__)
-    #define USE_DIV_TABLE
-//    #define CPU_BIG_ENDIAN
-
-//    #define MODE13
-
-    #define MODEHW
-    #define GAPI_GL1
-
-	extern int FRAME_WIDTH;
-    extern int FRAME_HEIGHT;
-    extern float FRAME_PERSP;
-
-    #define USE_FMT     (LVL_FMT_PHD)
 #else
     #error unsupported platform
 #endif
@@ -199,6 +199,7 @@
 #endif
 
 #include "stdio.h" // TODO_3DO armcpp bug?
+#include <stdint.h>
 
 #include <math.h>
 #include <limits.h>
@@ -327,8 +328,13 @@ typedef uint16             divTableInt;
     typedef uint8 ColorIndex;
 #endif
 
-#ifdef __SDL1__
-#define ADDR_ALIGN4(x)	x
+#if defined(__SDL1__) || defined(__SDL2__)
+inline uint8 *ADDR_ALIGN4(void *x)
+{
+	uint8 *y = (uint8 *) x;
+	y += ((intptr_t(x) + 3) & ~3) - intptr_t(x);
+	return y;
+}
 #else
 #define ADDR_ALIGN4(x)  ((uint8*)x += ((intptr_t(x) + 3) & ~3) - intptr_t(x))
 #endif
@@ -347,12 +353,10 @@ X_INLINE int32 abs(int32 x) {
 
 #if defined(__GBA__) || defined(__NDS__) || defined(__32X__)
     #define int2str(x,str) itoa(x, str, 10)
-#elif defined(__3DO__)
+#elif defined(__3DO__) || defined(__SDL1__) || defined(__SDL2__)
     #define int2str(x,str) sprintf(str, "%d", x)
 #elif defined(__TNS__)
     #define int2str(x,str) __itoa(x, str, 10)
-#elif defined(__SDL1__)
-    #define int2str(x,str) sprintf(str, "%d", x)
 #else
     #define int2str(x,str) _itoa(x, str, 10)
 #endif

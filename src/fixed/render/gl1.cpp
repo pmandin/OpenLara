@@ -2,7 +2,7 @@
 #define H_GL1
 
 #include <common.h>
-#ifdef __SDL1__
+#if defined(__SDL1__) || defined(__SDL2__)
 #include <SDL.h>
 #define NO_SDL_GLEXT
 #include <SDL_opengl.h>
@@ -13,7 +13,9 @@
 
 #define FIX2FLT (1.0f / 0x4000)
 
-#ifdef __WIN32__
+#ifdef __SDL2__
+extern SDL_Window* sdl_window;
+#elif __WIN32__
 extern HWND hWnd;
 extern HDC hDC;
 HGLRC hRC;
@@ -55,7 +57,7 @@ struct RoomInst
 */
 void renderInit()
 {
-#ifdef __SDL1__
+#if defined(__SDL1__) || defined(__SDL2__)
 	// OK
 #elif __WIN32__
     PIXELFORMATDESCRIPTOR pfd;
@@ -98,7 +100,7 @@ void renderInit()
 
 void renderFree()
 {
-#ifdef __SDL1__
+#if defined(__SDL1__) || defined(__SDL2__)
 	// OK
 #elif __WIN32__
     wglMakeCurrent(0, 0);
@@ -109,8 +111,10 @@ void renderFree()
 
 void renderSwap()
 {
-#ifdef __SDL1__
+#if defined(__SDL1__)
 	SDL_GL_SwapBuffers();
+#elif defined(__SDL2__)
+	SDL_GL_SwapWindow(sdl_window);
 #elif __WIN32__
     SwapBuffers(hDC);
 #endif
