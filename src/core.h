@@ -116,11 +116,11 @@
 #elif __linux__
     #define _OS_LINUX 1
 	// For testing SDL1 with linux
-//	#ifdef __SDL1__
-//		#define _GAPI_SW  1
-//	#else
+	#ifdef __SDL1__
+		#define _GAPI_SW  1
+	#else
 		#define _GAPI_GL  1
-//	#endif
+	#endif
 
     #define INV_VIBRATION
     #define INV_QUALITY

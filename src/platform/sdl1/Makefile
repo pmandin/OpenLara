@@ -12,7 +12,7 @@ LDFLAGS+=$(SDL_LDFLAGS) -lm -lrt -lpthread -lasound -ludev
 
 INCLUDES+=-I../../
 
-openlara :
+openlara:
 	$(CC) $(INCLUDES) $(CFLAGS) $(SRCS) -o $@ $(LDFLAGS)
 
 install : openlara
@@ -23,5 +23,6 @@ uninstall :
 	rm -f $(DESTDIR)$(PREFIX)/bin/OpenLara
 
 clean:
-	rm -f OpenLara
+	rm -f openlara
+
 
