@@ -354,7 +354,7 @@ int main(int argc, char **argv)
 	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
 	SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE,32);
 
-	screen = SDL_SetVideoMode(FRAME_WIDTH, FRAME_HEIGHT, 32, SDL_DOUBLEBUF | SDL_WINDOW_RESIZABLE);
+	screen = SDL_SetVideoMode(FRAME_WIDTH, FRAME_HEIGHT, 32, SDL_DOUBLEBUF | SDL_RESIZABLE);
 
     soundInit();
     inputInit();
