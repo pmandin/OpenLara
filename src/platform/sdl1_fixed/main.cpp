@@ -359,7 +359,13 @@ int main(int argc, char **argv)
 
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE |SDL_INIT_JOYSTICK | SDL_OPENGL);
     SDL_ShowCursor(0);
-    screen = SDL_SetVideoMode(FRAME_WIDTH, FRAME_HEIGHT, 16, /*SDL_DOUBLEBUF |*/ SDL_SWSURFACE /*| SDL_NOFRAME*/);
+
+	//SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+	screen = SDL_SetVideoMode(FRAME_WIDTH, FRAME_HEIGHT, 32, SDL_DOUBLEBUF /*| SDL_SWSURFACE | SDL_NOFRAME*/);
 
     soundInit();
     inputInit();
