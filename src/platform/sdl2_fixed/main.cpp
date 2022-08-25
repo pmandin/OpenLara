@@ -6,6 +6,7 @@
 
 SDL_Window* sdl_window;
 SDL_DisplayMode sdl_displaymode;
+SDL_GameController *joystick;
 
 int FRAME_WIDTH = 1024; // 1280;
 int FRAME_HEIGHT = 768; // 720;
@@ -102,38 +103,22 @@ void osJoyVibrate(int32 index, int32 L, int32 R)
 
 
 void inputInit() {
-#if 0
-    memset(joyDevice, 0, sizeof(joyDevice));
+	int i;
 
-    HMODULE h = LoadLibrary("xinput1_3.dll");
-    if (h == NULL) {
-        h = LoadLibrary("xinput9_1_0.dll");
-    }
-
-    if (!h)
-        return;
-
-    #define GetProcAddr(lib, x) (x = (decltype(x))GetProcAddress(lib, #x + 1))
-
-    GetProcAddr(h, _XInputGetState);
-    GetProcAddr(h, _XInputSetState);
-    GetProcAddr(h, _XInputEnable);
-
-    for (int i = 0; i < INPUT_JOY_COUNT; i++)
-    {
-        XINPUT_STATE state;
-        int res = _XInputGetState(i, &state);
-        joyDevice[i].ready = (_XInputGetState(i, &state) == ERROR_SUCCESS);
-
-        if (joyDevice[i].ready)
-            LOG("Gamepad %d is ready\n", i + 1);
-    }
-#endif
+	for (i=0; i<SDL_NumJoysticks(); i++) {
+		if (SDL_IsGameController(i)) {
+			joystick = SDL_GameControllerOpen(i);
+			break;
+		}
+	}
 }
 
 void inputFree()
 {
-//    memset(joyDevice, 0, sizeof(joyDevice));
+	if (joystick) {
+		SDL_GameControllerClose(joystick);
+		joystick = NULL;
+	}
 }
 
 void inputUpdate()
@@ -197,6 +182,54 @@ void inputUpdate()
 					default:	break;
 				}
 
+				keys &= ~key;
+				break;
+		    case SDL_CONTROLLERAXISMOTION:
+				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
+				switch(event.jaxis.axis) {
+					case 0:
+						if (event.jaxis.value<0)	key = IK_LEFT;
+						if (event.jaxis.value>0)	key = IK_RIGHT;
+						break;
+					case 1:
+						if (event.jaxis.value<0)	key = IK_UP;
+						if (event.jaxis.value>0)	key = IK_DOWN;
+						break;
+				}
+				keys |= key;
+				break;
+		    case SDL_CONTROLLERBUTTONDOWN:
+				switch(event.jbutton.button) {
+					case SDL_CONTROLLER_BUTTON_X:	key=IK_X;	break;
+					case SDL_CONTROLLER_BUTTON_A: key=IK_A;	break;
+					case SDL_CONTROLLER_BUTTON_B: key=IK_B;	break;
+					case SDL_CONTROLLER_BUTTON_Y: key=IK_Y;	break;
+					case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: key=IK_L;	break;
+					case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key=IK_R;	break;
+					case SDL_CONTROLLER_BUTTON_BACK: key=IK_SELECT;	break;
+					case SDL_CONTROLLER_BUTTON_START: key=IK_START;	break;
+					case SDL_CONTROLLER_BUTTON_DPAD_UP: key=IK_UP; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_DOWN: key=IK_DOWN; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_LEFT: key=IK_LEFT; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key=IK_RIGHT; break;
+				}
+				keys |= key;
+				break;
+		    case SDL_CONTROLLERBUTTONUP:
+				switch(event.jbutton.button) {
+					case SDL_CONTROLLER_BUTTON_X:	key=IK_X;	break;
+					case SDL_CONTROLLER_BUTTON_A: key=IK_A;	break;
+					case SDL_CONTROLLER_BUTTON_B: key=IK_B;	break;
+					case SDL_CONTROLLER_BUTTON_Y: key=IK_Y;	break;
+					case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: key=IK_L;	break;
+					case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key=IK_R;	break;
+					case SDL_CONTROLLER_BUTTON_BACK: key=IK_SELECT;	break;
+					case SDL_CONTROLLER_BUTTON_START: key=IK_START;	break;
+					case SDL_CONTROLLER_BUTTON_DPAD_UP: key=IK_UP; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_DOWN: key=IK_DOWN; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_LEFT: key=IK_LEFT; break;
+					case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key=IK_RIGHT; break;
+				}
 				keys &= ~key;
 				break;
 			case SDL_WINDOWEVENT:
@@ -347,7 +380,7 @@ const void* osLoadLevel(LevelID id)
 int main(int argc, char* argv[])
 {
     SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 
     SDL_GetCurrentDisplayMode(0, &sdl_displaymode);
 
@@ -370,7 +403,8 @@ int main(int argc, char* argv[])
 
     SDL_GLContext context = SDL_GL_CreateContext(sdl_window);
 
-    gameInit();
+	inputInit();
+	gameInit();
 
     SDL_ShowCursor(SDL_DISABLE);
 
@@ -393,7 +427,8 @@ int main(int argc, char* argv[])
         renderSwap();
     } while (!isQuit);
 
-    gameFree();
+	inputFree();
+	gameFree();
 
     SDL_DestroyWindow(sdl_window);
     SDL_Quit();
