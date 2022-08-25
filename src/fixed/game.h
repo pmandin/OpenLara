@@ -322,12 +322,12 @@ void gameRender()
     {
         PROFILE(CNT_RENDER);
 
+        clear();
+
         setViewport(RectMinMax(0, 0, FRAME_WIDTH, FRAME_HEIGHT));
 
         if (inventory.state == INV_STATE_NONE)
         {
-            clear();
-
             for (int32 i = 0; i < MAX_PLAYERS; i++)
             {
                 // TODO set viewports for coop
