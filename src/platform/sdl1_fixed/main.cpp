@@ -7,6 +7,7 @@ int FRAME_HEIGHT = 768; //720;
 
 SDL_Surface *screen = NULL;
 bool isQuit = false;
+SDL_Joystick *joystick = NULL;
 
 int32 fps;
 int32 frameIndex = 0;
@@ -90,36 +91,17 @@ bool osLoadGame()
 }
 
 void inputInit() {
-/*    memset(joyDevice, 0, sizeof(joyDevice));
-
-    HMODULE h = LoadLibrary("xinput1_3.dll");
-    if (h == NULL) {
-        h = LoadLibrary("xinput9_1_0.dll");
-    }
-
-    if (!h)
-        return;
-
-    #define GetProcAddr(lib, x) (x = (decltype(x))GetProcAddress(lib, #x + 1))
-
-    GetProcAddr(h, _XInputGetState);
-    GetProcAddr(h, _XInputSetState);
-    GetProcAddr(h, _XInputEnable);
-
-    for (int i = 0; i < INPUT_JOY_COUNT; i++)
-    {
-        XINPUT_STATE state;
-        int res = _XInputGetState(i, &state);
-        joyDevice[i].ready = (_XInputGetState(i, &state) == ERROR_SUCCESS);
-
-        if (joyDevice[i].ready)
-            LOG("Gamepad %d is ready\n", i + 1);
-    }*/
+	if (SDL_NumJoysticks()>0) {
+		joystick = SDL_JoystickOpen(0);
+	}
 }
 
 void inputFree()
 {
-  //  memset(joyDevice, 0, sizeof(joyDevice));
+	if (joystick) {
+		SDL_JoystickClose(joystick);
+		joystick = NULL;
+	}
 }
 
 void inputUpdate()
@@ -185,6 +167,54 @@ void inputUpdate()
 
 				keys &= ~key;
 				break;
+		    case SDL_JOYAXISMOTION:
+				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
+				switch(event.jaxis.axis) {
+					case 0:
+						if (event.jaxis.value<0)	key = IK_LEFT;
+						if (event.jaxis.value>0)	key = IK_RIGHT;
+						break;
+					case 1:
+						if (event.jaxis.value<0)	key = IK_UP;
+						if (event.jaxis.value>0)	key = IK_DOWN;
+						break;
+				}
+				keys |= key;
+				break;
+		    case SDL_JOYHATMOTION:
+				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
+				if ( event.jhat.value & SDL_HAT_UP )	key = IK_UP;
+				if ( event.jhat.value & SDL_HAT_RIGHT )	key = IK_RIGHT;
+				if ( event.jhat.value & SDL_HAT_DOWN )	key = IK_DOWN;
+				if ( event.jhat.value & SDL_HAT_LEFT )	key = IK_LEFT;
+				keys |= key;
+				break;
+		    case SDL_JOYBUTTONDOWN:
+				switch(event.jbutton.button) {
+					case 0:	key=IK_X;	break;
+					case 1: key=IK_A;	break;
+					case 2: key=IK_B;	break;
+					case 3: key=IK_Y;	break;
+					case 4: key=IK_L;	break;
+					case 5: key=IK_R;	break;
+					case 8: key=IK_SELECT;	break;
+					case 9: key=IK_START;	break;
+				}
+				keys |= key;
+				break;
+		    case SDL_JOYBUTTONUP:
+				switch(event.jbutton.button) {
+					case 0:	key=IK_X;	break;
+					case 1: key=IK_A;	break;
+					case 2: key=IK_B;	break;
+					case 3: key=IK_Y;	break;
+					case 4: key=IK_L;	break;
+					case 5: key=IK_R;	break;
+					case 8: key=IK_SELECT;	break;
+					case 9: key=IK_START;	break;
+				}
+				keys &= ~key;
+				break;
 			case SDL_VIDEORESIZE:
 				FRAME_WIDTH = event.resize.w;
 				FRAME_HEIGHT = event.resize.h;
@@ -199,49 +229,6 @@ void inputUpdate()
 
 
 #if 0
-	if (!_XInputGetState)
-        return;
-
-    for (int i = 0; i < INPUT_JOY_COUNT; i++)
-    {
-        if (!joyDevice[i].ready)
-            continue;
-
-        joyRumble(i);
-
-        XINPUT_STATE state;
-        if (_XInputGetState(i, &state) != ERROR_SUCCESS)
-        {
-            inputFree();
-            inputInit();
-            break;
-        }
-
-        static const InputKey buttons[] = { IK_UP, IK_DOWN, IK_LEFT, IK_RIGHT, IK_START, IK_SELECT, IK_NONE, IK_NONE, IK_L, IK_R, IK_NONE, IK_NONE, IK_A, IK_B, IK_X, IK_Y };
-
-        int32 curMask = state.Gamepad.wButtons;
-        int32 oldMask = joyDevice[i].mask;
-
-        for (int i = 0; i < 16; i++)
-        {
-            bool wasDown = (oldMask & (1 << i)) != 0;
-            bool isDown = (curMask & (1 << i)) != 0;
-
-            if (isDown == wasDown)
-                continue;
-
-            if (isDown && !wasDown) {
-                keys |= buttons[i];
-            } else {
-                keys &= ~buttons[i];
-            }
-        }
-
-        joyDevice[i].mask = curMask;
-
-
-        //osJoyVibrate(j, state.Gamepad.bLeftTrigger / 255.0f, state.Gamepad.bRightTrigger / 255.0f); // vibration test
-
         /*
         Input::setJoyPos(j, jkL, joyDir(joyAxis(state.Gamepad.sThumbLX, -32768, 32767),
             joyAxis(-state.Gamepad.sThumbLY, -32768, 32767)));
@@ -250,19 +237,11 @@ void inputUpdate()
         Input::setJoyPos(j, jkLT, vec2(state.Gamepad.bLeftTrigger / 255.0f, 0.0f));
         Input::setJoyPos(j, jkRT, vec2(state.Gamepad.bRightTrigger / 255.0f, 0.0f));
         */
-
-
-
-
-    }
-
 #endif
 }
 
 void osJoyVibrate(int32 index, int32 L, int32 R)
 {
-//    joyDevice[index].vL = L;
-//    joyDevice[index].vR = R;
 }
 
 uint8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
