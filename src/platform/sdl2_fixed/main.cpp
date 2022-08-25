@@ -19,14 +19,7 @@ const void* TRACKS_IMA;
 const void* TITLE_SCR;
 const void* levelData;
 
-//HWND hWnd;
-//HDC hDC;
-
 int32 g_timer;
-//LARGE_INTEGER g_current;
-
-//LARGE_INTEGER gTimerFreq;
-//LARGE_INTEGER gTimerStart;
 
 bool isQuit = false;
 
@@ -148,8 +141,71 @@ void inputUpdate()
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-            case SDL_QUIT:
+		uint32 key = 0;
+
+		switch (event.type) {
+			case SDL_KEYDOWN:
+				switch (event.key.keysym.sym) {
+					case SDLK_ESCAPE:	isQuit = true;	break;
+					case SDLK_UP:	key = IK_UP;	break;
+					case SDLK_DOWN:	key = IK_DOWN;	break;
+					case SDLK_LEFT:	key = IK_LEFT;	break;
+					case SDLK_RIGHT:	key = IK_RIGHT;	break;
+					case SDLK_a:	key = IK_B;      break;
+					case SDLK_s:	key = IK_A;      break;
+					case SDLK_q:	key = IK_L;      break;
+					case SDLK_w:	key = IK_R;      break;
+					case SDLK_RETURN:
+					case SDLK_KP_ENTER:
+						key = IK_START;	break;
+					case SDLK_SPACE:	key = IK_SELECT;	break;
+					case SDLK_1:
+					case SDLK_KP_1:
+						players[0]->extraL->goalWeapon = WEAPON_PISTOLS;
+						break;
+					case SDLK_2:
+					case SDLK_KP_2:
+						players[0]->extraL->goalWeapon = WEAPON_MAGNUMS;
+						break;
+					case SDLK_3:
+					case SDLK_KP_3:
+						players[0]->extraL->goalWeapon = WEAPON_UZIS;
+						break;
+					case SDLK_4:
+					case SDLK_KP_4:
+						players[0]->extraL->goalWeapon = WEAPON_SHOTGUN;
+						break;
+					default:	break;
+				}
+
+				keys |= key;
+				break;
+			case SDL_KEYUP:
+				switch (event.key.keysym.sym) {
+					case SDLK_UP:	key = IK_UP;	break;
+					case SDLK_DOWN:	key = IK_DOWN;	break;
+					case SDLK_LEFT:	key = IK_LEFT;	break;
+					case SDLK_RIGHT:	key = IK_RIGHT;	break;
+					case SDLK_a:	key = IK_B;      break;
+					case SDLK_s:	key = IK_A;      break;
+					case SDLK_q:	key = IK_L;      break;
+					case SDLK_w:	key = IK_R;      break;
+					case SDLK_RETURN:
+					case SDLK_KP_ENTER:
+						key = IK_START;	break;
+					case SDLK_SPACE:	key = IK_SELECT;	break;
+					default:	break;
+				}
+
+				keys &= ~key;
+				break;
+			case SDL_WINDOWEVENT:
+				if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+					FRAME_WIDTH = event.window.data1;;
+					FRAME_HEIGHT = event.window.data2;
+				}
+				break;
+			case SDL_QUIT:
                 isQuit = true;
                 break;
             default:
@@ -254,75 +310,6 @@ void soundFill()
 #endif
 }
 
-#if 0
-LRESULT CALLBACK wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-        case WM_ACTIVATE:
-        {
-            keys = 0;
-            break;
-        }
-
-        case WM_DESTROY :
-        {
-            PostQuitMessage(0);
-            break;
-        }
-
-        case WM_KEYDOWN    :
-        case WM_KEYUP      :
-        case WM_SYSKEYUP   :
-        case WM_SYSKEYDOWN :
-        {
-            InputKey key = IK_NONE;
-            switch (wParam) {
-                case VK_UP     : key = IK_UP;     break;
-                case VK_RIGHT  : key = IK_RIGHT;  break;
-                case VK_DOWN   : key = IK_DOWN;   break;
-                case VK_LEFT   : key = IK_LEFT;   break;
-                case 'A'       : key = IK_B;      break;
-                case 'S'       : key = IK_A;      break;
-                case 'Q'       : key = IK_L;      break;
-                case 'W'       : key = IK_R;      break;
-                case VK_RETURN : key = IK_START;  break;
-                case VK_SPACE  : key = IK_SELECT; break;
-            }
-
-            if (wParam == '1') players[0]->extraL->goalWeapon = WEAPON_PISTOLS;
-            if (wParam == '2') players[0]->extraL->goalWeapon = WEAPON_MAGNUMS;
-            if (wParam == '3') players[0]->extraL->goalWeapon = WEAPON_UZIS;
-            if (wParam == '4') players[0]->extraL->goalWeapon = WEAPON_SHOTGUN;
-
-            if (msg != WM_KEYUP && msg != WM_SYSKEYUP) {
-                keys |= key;
-            } else {
-                keys &= ~key;
-            }
-            break;
-        }
-
-        case MM_WOM_DONE :
-        {
-            soundFill();
-            break;
-        }
-
-        case WM_SIZE :
-        {
-            FRAME_WIDTH = LOWORD(lParam);
-            FRAME_HEIGHT = HIWORD(lParam);
-            break;
-        }
-
-        default :
-            return DefWindowProc(hWnd, msg, wParam, lParam);
-    }
-    return 0;
-}
-#endif
-
 const void* osLoadScreen(LevelID id)
 {
     return (const void*)1; // TODO
@@ -356,13 +343,6 @@ const void* osLoadLevel(LevelID id)
     return (void*)levelData;
 }
 
-// hint to the driver to use discrete GPU
-#if 0
-extern "C" {
-    __declspec(dllexport) int NvOptimusEnablement = 1; // NVIDIA
-    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1; // AMD
-}
-#endif
 
 int main(int argc, char* argv[])
 {
@@ -375,23 +355,24 @@ int main(int argc, char* argv[])
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	SDL_GL_SetAttribute(SDL_GL_RED_SIZE,8);
+	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE,8);
+	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,8);
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE,8);
+	SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE,32);
 
     sdl_window = SDL_CreateWindow(WND_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        FRAME_WIDTH, FRAME_HEIGHT, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN
+        FRAME_WIDTH, FRAME_HEIGHT, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
 
     // We try to use the current video mode, but we inform the core of whatever mode SDL2 gave us in the end.
-    //SDL_GetWindowSize(sdl_window, &w, &h);
+    SDL_GetWindowSize(sdl_window, &FRAME_WIDTH, &FRAME_HEIGHT);
 
     SDL_GLContext context = SDL_GL_CreateContext(sdl_window);
 
     gameInit();
 
-//    Core::width = w;
-    //Core::height = h;
-
-
-    //SDL_ShowCursor(SDL_DISABLE);
+    SDL_ShowCursor(SDL_DISABLE);
 
     int32 startTime = osGetSystemTimeMS() - 33;
     int32 lastFrame = 0;
@@ -410,7 +391,7 @@ int main(int argc, char* argv[])
         gameRender();
 
         renderSwap();
-    } while (!isQuit); // msg.message != WM_QUIT);
+    } while (!isQuit);
 
     gameFree();
 
@@ -419,72 +400,3 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-
-#if 0
-int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
-{
-    QueryPerformanceFrequency(&gTimerFreq);
-    QueryPerformanceCounter(&gTimerStart);
-
-//    int argc = (lpCmdLine && strlen(lpCmdLine)) ? 2 : 1;
-//    const char* argv[] = { "", lpCmdLine };
-
-    RECT r = { 0, 0, FRAME_WIDTH, FRAME_HEIGHT };
-
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
-    if (sw <= r.right + 128 || sh <= r.bottom + 128) {
-        r.right /= 2;
-        r.bottom /= 2;
-    }
-
-    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, false);
-    int wx = (sw - (r.right - r.left)) / 2;
-    int wy = (sh - (r.bottom - r.top)) / 2;
-
-    hWnd = CreateWindow("static", "OpenLara", WS_OVERLAPPEDWINDOW, wx + r.left, wy + r.top, r.right - r.left, r.bottom - r.top, 0, 0, 0, 0);
-    hDC = GetDC(hWnd);
-
-    SetWindowLong(hWnd, GWL_WNDPROC, (LONG)&wndProc);
-    ShowWindow(hWnd, SW_SHOWDEFAULT);
-
-    soundInit();
-    inputInit();
-
-    gameInit();
-
-    MSG msg;
-
-    int32 startTime = GetTickCount() - 33;
-    int32 lastFrame = 0;
-
-    do {
-        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        } else {
-        #ifdef _DEBUG
-            Sleep(4);
-        #endif
-            inputUpdate();
-
-            int32 frame = (GetTickCount() - startTime) / 33;
-            if (GetAsyncKeyState('R')) frame /= 10;
-
-            int32 count = frame - lastFrame;
-            if (GetAsyncKeyState('T')) count *= 10;
-            gameUpdate(count);
-            lastFrame = frame;
-
-            gameRender();
-
-            renderSwap();
-        }
-    } while (msg.message != WM_QUIT);
-
-    inputFree();
-    gameFree();
-
-    return 0;
-}
-#endif
