@@ -29,7 +29,7 @@ int32 alignOffset(int32 a, int32 b)
 
 void* soundPlay(int16 id, const vec3i* pos)
 {
-#if defined(__32X__) || defined(__WIN32__) // TODO
+#if defined(__32X__) || defined(__WIN32__) || defined(__SDL1__) || defined(__SDL2__) // TODO
     return NULL;
 #endif
 
@@ -202,7 +202,7 @@ void ItemObj::move()
         pos.y += vSpeed;
     } else {
         sp += anim->accel * (frameIndex - anim->frameBegin);
-    
+
         hSpeed = sp >> 16;
     }
 
@@ -375,8 +375,8 @@ void ItemObj::animCmd(bool fx, const Anim* anim)
                         case FX_DRAW_LEFTGUN   : drawGun(false); break;
                         case FX_SHOT_RIGHTGUN  : game->addMuzzleFlash(this, LARA_RGUN_JOINT, LARA_RGUN_OFFSET, 1 + camera->cameraIndex); break;
                         case FX_SHOT_LEFTGUN   : game->addMuzzleFlash(this, LARA_LGUN_JOINT, LARA_LGUN_OFFSET, 1 + camera->cameraIndex); break;
-                        case FX_MESH_SWAP_1    : 
-                        case FX_MESH_SWAP_2    : 
+                        case FX_MESH_SWAP_1    :
+                        case FX_MESH_SWAP_2    :
                         case FX_MESH_SWAP_3    : Character::cmdEffect(fx);
                         case 26 : break; // TODO TR2 reset_hair
                         case 32 : break; // TODO TR3 footprint
@@ -615,7 +615,7 @@ void ItemObj::fxRicochet(Room *fxRoom, const vec3i &fxPos, bool fxSound)
 void ItemObj::fxBlood(const vec3i &fxPos, int16 fxAngleY, int16 fxSpeed)
 {
     ItemObj* blood = ItemObj::add(ITEM_BLOOD, room, fxPos, fxAngleY);
-    
+
     if (!blood)
         return;
 
@@ -627,7 +627,7 @@ void ItemObj::fxBlood(const vec3i &fxPos, int16 fxAngleY, int16 fxSpeed)
 void ItemObj::fxSmoke(const vec3i &fxPos)
 {
     ItemObj* smoke = ItemObj::add(ITEM_SMOKE, room, fxPos, 0);
-    
+
     if (!smoke)
         return;
 
@@ -644,7 +644,7 @@ void ItemObj::fxSplash()
     for (int32 i = 0; i < 10; i++)
     {
         ItemObj* splash = ItemObj::add(ITEM_SPLASH, room, fxPos, int16(rand_draw() - ANGLE_90) << 1);
-    
+
         if (!splash)
             return;
 
@@ -656,7 +656,7 @@ void ItemObj::fxSplash()
 void ItemObj::updateRoom(int32 offset)
 {
     Room* nextRoom = room->getRoom(pos.x, pos.y + offset, pos.z);
-        
+
     if (room != nextRoom)
     {
         room->remove(this);
@@ -911,7 +911,7 @@ int32 ItemObj::getSpheres(Sphere* spheres, bool flag) const
         meshPtr++;
     }
     matrixPop();
-    
+
     for (int32 i = 1; i < model->count; i++)
     {
         if (node->flags & 1) matrixPop();
@@ -952,7 +952,7 @@ int32 ItemObj::getSpheres(Sphere* spheres, bool flag) const
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #endif
 
-ItemObj::ItemObj(Room* room) 
+ItemObj::ItemObj(Room* room)
 {
     angle.x     = 0;
     angle.z     = 0;
@@ -972,8 +972,8 @@ ItemObj::ItemObj(Room* room)
 
     flags &= (ITEM_FLAG_ONCE | ITEM_FLAG_MASK);
 
-    if ((type == ITEM_BRIDGE_FLAT)   || 
-        (type == ITEM_BRIDGE_TILT_1) || 
+    if ((type == ITEM_BRIDGE_FLAT)   ||
+        (type == ITEM_BRIDGE_TILT_1) ||
         (type == ITEM_BRIDGE_TILT_2) ||
         (type == ITEM_TRAP_FLOOR))
     {
@@ -1023,7 +1023,7 @@ void ItemObj::draw()
 struct ItemSave {
     int16 x;
     int16 y;
-    int16 z; 
+    int16 z;
     int16 ax;
     int16 ay;
     uint16 animIndex;
@@ -1213,7 +1213,7 @@ void ItemObj::collidePush(Lara* lara, CollisionInfo* cinfo, bool enemyHit) const
     cinfo->gapCeiling = 0;
 
     cinfo->setAngle(phd_atan(lara->pos.z - cinfo->pos.z, lara->pos.x - cinfo->pos.x));
-    
+
     collideRoom(LARA_HEIGHT, 0);
 
     cinfo->setAngle(tmpAngle);
@@ -1346,7 +1346,7 @@ void ItemObj::collideRoom(int32 height, int32 yOffset) const
     }
 
 // front
-    if (cinfo.f.floor > cinfo.gapPos || 
+    if (cinfo.f.floor > cinfo.gapPos ||
         cinfo.f.floor < cinfo.gapNeg ||
         cinfo.f.ceiling > cinfo.gapCeiling)
     {
