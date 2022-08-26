@@ -107,6 +107,8 @@ void inputFree()
 void inputUpdate()
 {
 	SDL_Event event;
+	static int prev_x_axis, prev_y_axis;
+	int cur_x_axis = 0, cur_y_axis = 0;
 
 	while (SDL_PollEvent(&event)) {
 		uint32 key = 0;
@@ -168,18 +170,14 @@ void inputUpdate()
 				keys &= ~key;
 				break;
 		    case SDL_JOYAXISMOTION:
-				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
 				switch(event.jaxis.axis) {
 					case 0:
-						if (event.jaxis.value<0)	key = IK_LEFT;
-						if (event.jaxis.value>0)	key = IK_RIGHT;
+						cur_x_axis = event.jaxis.value;
 						break;
 					case 1:
-						if (event.jaxis.value<0)	key = IK_UP;
-						if (event.jaxis.value>0)	key = IK_DOWN;
+						cur_y_axis = event.jaxis.value;
 						break;
 				}
-				keys |= key;
 				break;
 		    case SDL_JOYHATMOTION:
 				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
@@ -227,6 +225,34 @@ void inputUpdate()
 		}
 	}
 
+	// Generate events for axis
+	if (cur_x_axis == 0) {
+		if (prev_x_axis!=0) {
+			keys &= ~(IK_LEFT|IK_RIGHT);
+		}
+	} else {
+		if (cur_x_axis>0) {
+			keys |= IK_RIGHT;
+		}
+		if (cur_x_axis<0) {
+			keys |= IK_LEFT;
+		}
+	}
+	prev_x_axis = cur_x_axis;
+
+	if (cur_y_axis == 0) {
+		if (prev_y_axis!=0) {
+			keys &= ~(IK_UP|IK_DOWN);
+		}
+	} else {
+		if (cur_y_axis>0) {
+			keys |= IK_DOWN;
+		}
+		if (cur_y_axis<0) {
+			keys |= IK_UP;
+		}
+	}
+	prev_y_axis = cur_y_axis;
 
 #if 0
         /*

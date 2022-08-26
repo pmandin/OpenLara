@@ -124,6 +124,8 @@ void inputFree()
 void inputUpdate()
 {
     SDL_Event event;
+	static int prev_x_axis, prev_y_axis;
+	int cur_x_axis = 0, cur_y_axis = 0;
 
     while (SDL_PollEvent(&event)) {
 		uint32 key = 0;
@@ -185,18 +187,14 @@ void inputUpdate()
 				keys &= ~key;
 				break;
 		    case SDL_CONTROLLERAXISMOTION:
-				keys &= ~(IK_LEFT|IK_RIGHT|IK_UP|IK_DOWN);
 				switch(event.jaxis.axis) {
 					case 0:
-						if (event.jaxis.value<0)	key = IK_LEFT;
-						if (event.jaxis.value>0)	key = IK_RIGHT;
+						cur_x_axis = event.jaxis.value;
 						break;
 					case 1:
-						if (event.jaxis.value<0)	key = IK_UP;
-						if (event.jaxis.value>0)	key = IK_DOWN;
+						cur_y_axis = event.jaxis.value;
 						break;
 				}
-				keys |= key;
 				break;
 		    case SDL_CONTROLLERBUTTONDOWN:
 				switch(event.jbutton.button) {
@@ -245,51 +243,37 @@ void inputUpdate()
                 break;
         }
     }
-#if 0
-    if (!_XInputGetState)
-        return;
 
-    for (int i = 0; i < INPUT_JOY_COUNT; i++)
-    {
-        if (!joyDevice[i].ready)
-            continue;
+	// Generate events for axis
+	if (cur_x_axis == 0) {
+		if (prev_x_axis!=0) {
+			keys &= ~(IK_LEFT|IK_RIGHT);
+		}
+	} else {
+		if (cur_x_axis>0) {
+			keys |= IK_RIGHT;
+		}
+		if (cur_x_axis<0) {
+			keys |= IK_LEFT;
+		}
+	}
+	prev_x_axis = cur_x_axis;
 
-        joyRumble(i);
+	if (cur_y_axis == 0) {
+		if (prev_y_axis!=0) {
+			keys &= ~(IK_UP|IK_DOWN);
+		}
+	} else {
+		if (cur_y_axis>0) {
+			keys |= IK_DOWN;
+		}
+		if (cur_y_axis<0) {
+			keys |= IK_UP;
+		}
+	}
+	prev_y_axis = cur_y_axis;
 
-        XINPUT_STATE state;
-        if (_XInputGetState(i, &state) != ERROR_SUCCESS)
-        {
-            inputFree();
-            inputInit();
-            break;
-        }
-
-        static const InputKey buttons[] = { IK_UP, IK_DOWN, IK_LEFT, IK_RIGHT, IK_START, IK_SELECT, IK_NONE, IK_NONE, IK_L, IK_R, IK_NONE, IK_NONE, IK_A, IK_B, IK_X, IK_Y };
-
-        int32 curMask = state.Gamepad.wButtons;
-        int32 oldMask = joyDevice[i].mask;
-
-        for (int i = 0; i < 16; i++)
-        {
-            bool wasDown = (oldMask & (1 << i)) != 0;
-            bool isDown = (curMask & (1 << i)) != 0;
-
-            if (isDown == wasDown)
-                continue;
-
-            if (isDown && !wasDown) {
-                keys |= buttons[i];
-            } else {
-                keys &= ~buttons[i];
-            }
-        }
-
-        joyDevice[i].mask = curMask;
-
-
-        //osJoyVibrate(j, state.Gamepad.bLeftTrigger / 255.0f, state.Gamepad.bRightTrigger / 255.0f); // vibration test
-
-        /*
+    /*
         Input::setJoyPos(j, jkL, joyDir(joyAxis(state.Gamepad.sThumbLX, -32768, 32767),
             joyAxis(-state.Gamepad.sThumbLY, -32768, 32767)));
         Input::setJoyPos(j, jkR, joyDir(joyAxis(state.Gamepad.sThumbRX, -32768, 32767),
@@ -297,12 +281,6 @@ void inputUpdate()
         Input::setJoyPos(j, jkLT, vec2(state.Gamepad.bLeftTrigger / 255.0f, 0.0f));
         Input::setJoyPos(j, jkRT, vec2(state.Gamepad.bRightTrigger / 255.0f, 0.0f));
         */
-
-
-
-
-    }
-#endif
 }
 
 //uint8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
