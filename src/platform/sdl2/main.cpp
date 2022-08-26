@@ -110,7 +110,7 @@ bool isKeyPressed (SDL_Scancode scancode) {
     return false;
 }
 
-#ifndef _GAPI_GLES 
+#ifndef _GAPI_GLES
 void toggleFullscreen () {
 
     Uint32 flags = 0;
@@ -237,7 +237,7 @@ int joyGetIndex(SDL_JoystickID id) {
 bool joyIsController (Sint32 instanceID) {
     int i;
     bool ret = false;
-    
+
     // We can't use SDL_IsGameController after we have physically disconnected a joystick, so we use this workaround.
     for (i = 0; i < sdl_numcontrollers; i++) {
         if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(sdl_controllers[i])) == instanceID) {
@@ -275,11 +275,11 @@ void joyRemove(Sint32 instanceID) {
                 sdl_numcontrollers--;
                 sdl_numjoysticks--;
             }
-        }   
+        }
     }
     // Closing joystick
     else {
-        i = joyGetIndex(instanceID);    
+        i = joyGetIndex(instanceID);
         if (i >= 0) {
             SDL_JoystickClose(sdl_joysticks[i]);
             sdl_numjoysticks--;
@@ -334,14 +334,17 @@ void inputUpdate() {
 
     while (SDL_PollEvent(&event) == 1) { // while there are still events to be processed
         switch (event.type) {
-            case SDL_KEYDOWN: {
+			case SDL_QUIT:
+				Core::isQuit = true;
+				break;
+			case SDL_KEYDOWN: {
                 int scancode = event.key.keysym.scancode;
                 InputKey key = codeToInputKey(scancode);
                 if (key != ikNone) {
                     Input::setDown(key, 1);
                 }
 
-#ifndef _GAPI_GLES 
+#ifndef _GAPI_GLES
                 if (scancode == SDL_SCANCODE_RETURN) {
                     if (isKeyPressed(SDL_SCANCODE_LALT) && isKeyPressed(SDL_SCANCODE_RETURN)) {
                         toggleFullscreen();
@@ -438,7 +441,7 @@ void inputUpdate() {
                         switch (event.jaxis.axis)
                         {
                             // In the classic joystick interface we know what axis changed by it's number,
-                            // they have no names like on the fancy GameController interface. 
+                            // they have no names like on the fancy GameController interface.
                             case 0: joyL.x = joyAxisValue(event.jaxis.value); break;
                             case 1: joyL.y = joyAxisValue(event.jaxis.value); break;
                             case 2: joyR.x = joyAxisValue(event.jaxis.value); break;
@@ -470,7 +473,7 @@ void inputUpdate() {
 }
 
 void print_help(int argc, char **argv) {
-    
+
     printf("%s [OPTION]\nA open source re-implementation of the classic Tomb Raider engine.\n",
            argc ? argv[0] : "OpenLara");
     puts("-d [DIRECTORY]  directory where data files are");
@@ -479,7 +482,7 @@ void print_help(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-    
+
     cacheDir[0] = saveDir[0] = contentDir[0] = 0;
     char *lvlName = nullptr;
 
@@ -539,9 +542,9 @@ int main(int argc, char **argv) {
 #else
         WIN_W, WIN_H, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN
 #endif
-    ); 
- 
-    // We try to use the current video mode, but we inform the core of whatever mode SDL2 gave us in the end. 
+    );
+
+    // We try to use the current video mode, but we inform the core of whatever mode SDL2 gave us in the end.
     SDL_GetWindowSize(sdl_window, &w, &h);
 
     Core::width  = w;
