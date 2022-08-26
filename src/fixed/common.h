@@ -32,8 +32,12 @@
 #define FIXED_SHIFT     14
 
 #if defined(__SDL1__) || defined(__SDL2__)
-    #define USE_DIV_TABLE
-//    #define CPU_BIG_ENDIAN
+	#include <SDL.h>
+
+	#define USE_DIV_TABLE
+	#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+		#define CPU_BIG_ENDIAN
+	#endif
 
 //    #define MODE13
 
