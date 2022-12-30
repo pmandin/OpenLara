@@ -48,10 +48,10 @@ Te           .req index01
 PN           .req index23
 sprites      .req index01
 
-SP_SIZE = (7 * VERTEX_SIZEOF) + 4
+SP_SIZE = (8 * VERTEX_SIZEOF) + 4
 SP_SPRITES = SP_SIZE - 4
 
-.extern rasterize_c, drawPoly
+.extern drawPoly
 
 .global flush_asm
 flush_asm:
@@ -105,9 +105,6 @@ flush_asm:
     ldr face, [list], #-4   // read the first face from the list and decrement
     cmp face, #0
     beq .next_ot            // list is empty, go next
-
-    mov zero, #0
-    str zero, [list, #4]    // reset the list pointer in OT
 
 .loop_list:
     ldmia face, {flags, face, index01, index23} // read face params and next face
@@ -178,7 +175,7 @@ flush_asm:
     // r1 = ptr
     tst face, face
     adrne lr, .loop_list
-    adreq lr, .next_ot
+    adreq lr, .next_ot_zero
 
     tst flags, #FACE_CLIPPED
     bne drawPoly
@@ -213,7 +210,7 @@ flush_asm:
     // r1 = ptr
     tst face, face
     adrne lr, .loop_list
-    adreq lr, .next_ot
+    adreq lr, .next_ot_zero
 
     // gui
     cmp type, #FACE_TYPE_SPRITE
@@ -230,6 +227,9 @@ flush_asm:
     bic uv, uwvh, MASK
     str uv, [ptr, #(VERTEX_T + VERTEX_SIZEOF * 1)]
     b rasterize_asm
+
+.next_ot_zero:
+    str face, [list, #4]    // reset the list pointer in OT
 
 .next_ot:
     cmp list, OT

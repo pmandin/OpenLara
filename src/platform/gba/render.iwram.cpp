@@ -26,13 +26,13 @@ struct ViewportRel {
 ViewportRel viewportRel;
 
 #if defined(__GBA_WIN__)
-    uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #elif defined(__GBA__)
     uint32 fb = MEM_VRAM;
 #elif defined(__TNS__)
-    uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #elif defined(__DOS__)
-    uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #endif
 
 enum FaceType {
@@ -62,29 +62,32 @@ extern Level level;
 
 const uint8* gTile;
 
-Vertex* gVerticesBase;
-Face* gFacesBase;
-
 EWRAM_DATA uint8 gBackgroundCopy[FRAME_WIDTH * FRAME_HEIGHT];   // EWRAM 37.5k
 EWRAM_DATA ALIGN8 Vertex gVertices[MAX_VERTICES];               // EWRAM 16k
 EWRAM_DATA Face gFaces[MAX_FACES];                              // EWRAM 30k
 Face* gOT[OT_SIZE];                                             // IWRAM 2.5k
+
+Vertex* gVerticesBase = gVertices;
+Face* gFacesBase = gFaces;
+
+#if defined(USE_VRAM_MESH) || defined(USE_VRAM_ROOM)
+uint8* vramPtr;
+#endif
 
 enum ClipFlags {
     CLIP_LEFT    = 1 << 0,
     CLIP_RIGHT   = 1 << 1,
     CLIP_TOP     = 1 << 2,
     CLIP_BOTTOM  = 1 << 3,
-    CLIP_FAR     = 1 << 4,
-    CLIP_NEAR    = 1 << 5,
-    CLIP_FRAME   = 1 << 6,
-    CLIP_DISCARD = (CLIP_LEFT | CLIP_RIGHT | CLIP_TOP | CLIP_BOTTOM | CLIP_FAR | CLIP_NEAR),
+    CLIP_PLANE   = 1 << 4,
+    CLIP_FRAME   = 1 << 5,
+    CLIP_DISCARD = (CLIP_LEFT | CLIP_RIGHT | CLIP_TOP | CLIP_BOTTOM | CLIP_PLANE),
 };
 
 const MeshQuad gShadowQuads[] = {
-    { (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT), {0, 1, 2, 7} },
-    { (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT), {7, 2, 3, 6} },
-    { (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT), {6, 3, 4, 5} }
+    { {0, 1, 1, 5}, (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT) },    // abs idx {0, 1, 2, 7}
+    { {0,-5, 1, 3}, (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT) },    // abs idx {7, 2, 3, 6}
+    { {0,-3, 1, 1}, (FACE_TYPE_SHADOW << FACE_TYPE_SHIFT) }     // abs idx {6, 3, 4, 5}
 };
 
 void setViewport(const RectMinMax &vp)
@@ -129,6 +132,7 @@ extern "C" {
     #define faceAddMeshQuads        faceAddMeshQuads_asm
     #define faceAddMeshTriangles    faceAddMeshTriangles_asm
     #define rasterize               rasterize_asm
+    #define clearFB                 clearFB_asm
 
     extern "C" {
         void transformRoom_asm(const RoomVertex* vertices, int32 count);
@@ -139,6 +143,7 @@ extern "C" {
         void faceAddMeshQuads_asm(const MeshQuad* polys, int32 count);
         void faceAddMeshTriangles_asm(const MeshTriangle* polys, int32 count);
         void rasterize_asm(uint32 flags, VertexLink* top);
+        void clearFB_asm(void* fb);
     }
 #else
     #define transformRoom           transformRoom_c
@@ -149,8 +154,9 @@ extern "C" {
     #define faceAddMeshQuads        faceAddMeshQuads_c
     #define faceAddMeshTriangles    faceAddMeshTriangles_c
     #define rasterize               rasterize_c
+    #define clearFB(fb)             dmaFill(fb, 0, FRAME_WIDTH * FRAME_HEIGHT)
 
-X_INLINE bool checkBackface(const Vertex *a, const Vertex *b, const Vertex *c)
+X_INLINE bool checkBackface(const Vertex* a, const Vertex* b, const Vertex* c)
 {
     return (b->x - a->x) * (c->y - a->y) <= (c->x - a->x) * (b->y - a->y);
 }
@@ -163,10 +169,10 @@ void transformRoom_c(const RoomVertex* vertices, int32 count)
     {
         uint32 value = *(uint32*)(vertices++);
 
-        int32 vx = (value & (0xFF)) << 10;
+        int32 vx = (value & (0xFF)) << 8;
         int32 vy = (value & (0xFF << 8));
-        int32 vz = (value & (0xFF << 16)) >> 6;
-        int32 vg = (value & (0xFF << 24)) >> (24 - 5);
+        int32 vz = (value & (0xFF << 16)) >> 8;
+        int32 vg = (value & (0xFF << 24)) >> (24 + 3);
 
         const Matrix &m = matrixGet();
         int32 x = DP43(m.e00, m.e01, m.e02, m.e03, vx, vy, vz);
@@ -176,12 +182,12 @@ void transformRoom_c(const RoomVertex* vertices, int32 count)
         uint32 clip = 0;
 
         if (z <= VIEW_MIN_F) {
-            clip = CLIP_NEAR;
+            clip = CLIP_PLANE;
             z = VIEW_MIN_F;
         }
 
         if (z >= VIEW_MAX_F) {
-            clip = CLIP_FAR;
+            clip = CLIP_PLANE;
             z = VIEW_MAX_F;
         }
 
@@ -189,11 +195,13 @@ void transformRoom_c(const RoomVertex* vertices, int32 count)
         y >>= FIXED_SHIFT;
         z >>= FIXED_SHIFT;
 
-        if (z > FOG_MIN)
+        int32 fog = z - FOG_MIN;
+        if (fog > 0)
         {
-            vg += (z - FOG_MIN) << FOG_SHIFT;
-            if (vg > 8191) {
-                vg = 8191;
+            vg += fog >> (FOG_SHIFT + 3);
+            if (vg > 31)
+            {
+                vg = 31;
             }
         }
 
@@ -231,9 +239,9 @@ void transformRoomUW_c(const RoomVertex* vertices, int32 count)
     {
         uint32 value = *(uint32*)(vertices++);
 
-        int32 vx = (value & (0xFF)) << 10;
+        int32 vx = (value & (0xFF)) << 8;
         int32 vy = (value & (0xFF << 8));
-        int32 vz = (value & (0xFF << 16)) >> 6;
+        int32 vz = (value & (0xFF << 16)) >> 8;
         int32 vg = (value & (0xFF << 24)) >> (24 - 5);
 
         const Matrix &m = matrixGet();
@@ -244,12 +252,12 @@ void transformRoomUW_c(const RoomVertex* vertices, int32 count)
         uint32 clip = 0;
 
         if (z <= VIEW_MIN_F) {
-            clip = CLIP_NEAR;
+            clip = CLIP_PLANE;
             z = VIEW_MIN_F;
         }
 
         if (z >= VIEW_MAX_F) {
-            clip = CLIP_FAR;
+            clip = CLIP_PLANE;
             z = VIEW_MAX_F;
         }
 
@@ -298,9 +306,9 @@ void transformMesh_c(const MeshVertex* vertices, int32 count, int32 intensity)
 
     for (int32 i = 0; i < count; i++, res++)
     {
-        int32 vx = vertices->x;
-        int32 vy = vertices->y;
-        int32 vz = vertices->z;
+        int32 vx = vertices->x << 2;
+        int32 vy = vertices->y << 2;
+        int32 vz = vertices->z << 2;
         vertices++;
 
         const Matrix &m = matrixGet();
@@ -311,12 +319,12 @@ void transformMesh_c(const MeshVertex* vertices, int32 count, int32 intensity)
         uint32 clip = 0;
 
         if (z <= VIEW_MIN_F) {
-            clip = CLIP_NEAR;
+            clip = CLIP_PLANE;
             z = VIEW_MIN_F;
         }
 
         if (z >= VIEW_MAX_F) {
-            clip = CLIP_FAR;
+            clip = CLIP_PLANE;
             z = VIEW_MAX_F;
         }
 
@@ -343,15 +351,18 @@ void transformMesh_c(const MeshVertex* vertices, int32 count, int32 intensity)
 
 void faceAddRoomQuads_c(const RoomQuad* polys, int32 count)
 {
-    const Vertex* v = gVerticesBase;
+    const Vertex* v0;
+    const Vertex* v1;
+    const Vertex* v2;
+    const Vertex* v3 = gVerticesBase;
 
     for (int32 i = 0; i < count; i++, polys++)
     {
         uint32 flags = polys->flags;
-        const Vertex* v0 = v + polys->indices[0];
-        const Vertex* v1 = v + polys->indices[1];
-        const Vertex* v2 = v + polys->indices[2];
-        const Vertex* v3 = v + polys->indices[3];
+        v0 = v3 + polys->indices[0];
+        v1 = v0 + polys->indices[1];
+        v2 = v1 + polys->indices[2];
+        v3 = v2 + polys->indices[3];
 
         uint32 c0 = v0->clip;
         uint32 c1 = v1->clip;
@@ -434,15 +445,17 @@ void faceAddRoomTriangles_c(const RoomTriangle* polys, int32 count)
 
 void faceAddMeshQuads_c(const MeshQuad* polys, int32 count)
 {
-    const Vertex* v = gVerticesBase;
+    const Vertex* v0;
+    const Vertex* v1;
+    const Vertex* v2;
+    const Vertex* v3 = gVerticesBase;
 
     for (int32 i = 0; i < count; i++, polys++)
     {
-        uint32 flags = polys->flags;
-        const Vertex* v0 = v + polys->indices[0];
-        const Vertex* v1 = v + polys->indices[1];
-        const Vertex* v2 = v + polys->indices[2];
-        const Vertex* v3 = v + polys->indices[3];
+        v0 = v3 + polys->indices[0];
+        v1 = v0 + polys->indices[1];
+        v2 = v1 + polys->indices[2];
+        v3 = v2 + polys->indices[3];
 
         if (checkBackface(v0, v1, v2))
             continue;
@@ -455,6 +468,7 @@ void faceAddMeshQuads_c(const MeshQuad* polys, int32 count)
         if (c0 & c1 & c2 & c3 & CLIP_DISCARD)
             continue;
 
+        uint32 flags = polys->flags;
         if ((c0 | c1 | c2 | c3) & CLIP_FRAME) {
             flags |= FACE_CLIPPED;
         }
@@ -472,14 +486,15 @@ void faceAddMeshQuads_c(const MeshQuad* polys, int32 count)
 
 void faceAddMeshTriangles_c(const MeshTriangle* polys, int32 count)
 {
-    const Vertex* v = gVerticesBase;
+    const Vertex* v0;
+    const Vertex* v1;
+    const Vertex* v2 = gVerticesBase;
 
     for (int32 i = 0; i < count; i++, polys++)
     {
-        uint32 flags = polys->flags;
-        const Vertex* v0 = v + polys->indices[0];
-        const Vertex* v1 = v + polys->indices[1];
-        const Vertex* v2 = v + polys->indices[2];
+        v0 = v2 + polys->indices[0];
+        v1 = v0 + polys->indices[1];
+        v2 = v1 + polys->indices[3];
 
         if (checkBackface(v0, v1, v2))
             continue;
@@ -491,6 +506,7 @@ void faceAddMeshTriangles_c(const MeshTriangle* polys, int32 count)
         if (c0 & c1 & c2 & CLIP_DISCARD)
             continue;
 
+        uint32 flags = polys->flags;
         if ((c0 | c1 | c2) & CLIP_FRAME) {
             flags |= FACE_CLIPPED;
         }
@@ -590,7 +606,7 @@ void flush_c()
 
     gFacesBase = gFaces;
 
-    VertexLink v[4 + 3];
+    VertexLink v[8];
     VertexLink* q = v;
     VertexLink* t = v + 4;
     // quad
@@ -609,6 +625,7 @@ void flush_c()
     t[1].next = 1;
     t[2].prev = -1;
     t[2].next = -2;
+    // t[3] dummy
 
     PROFILE(CNT_FLUSH);
 
@@ -684,30 +701,12 @@ void flush_c()
 }
 #endif
 
-void renderInit()
-{
-    gVerticesBase = gVertices;
-    gFacesBase = gFaces;
-}
-
-void renderFree()
-{
-}
-
-void renderLevelInit()
-{
-}
-
-void renderLevelFree()
-{
-}
-
 extern "C" X_NOINLINE void drawPoly(uint32 flags, VertexLink* v)
 {
     #define LERP_SHIFT          6
     #define LERP(a,b,t)         (b + ((a - b) * t >> LERP_SHIFT))
     //#define LERP2(a,b,ta,tb)    LERP(a,b,t)
-    #define LERP2(a,b,ta,tb)    (b + (((a - b) * ta / tb) >> LERP_SHIFT) ) // less gaps between clipped polys, but slow
+    #define LERP2(a,b,ta,tb)    (b + (((a - b) * ta / tb) >> LERP_SHIFT) ) // less gaps between clipped polys, but slow // @DIV
 
     #define CLIP_AXIS(X, Y, edge, output) {\
         int32 ta = (edge - b->v.X) << LERP_SHIFT;\
@@ -820,10 +819,10 @@ void faceAddMesh(const MeshQuad* quads, const MeshTriangle* triangles, int32 qCo
 
 void clear()
 {
-    dmaFill((void*)fb, 0, VRAM_WIDTH * FRAME_HEIGHT * 2);
+    clearFB((void*)fb);
 }
 
-void renderRoom(const Room* room)
+void renderRoom(Room* room)
 {
     int32 vCount = room->info->verticesCount;
     if (vCount <= 0)
@@ -834,6 +833,27 @@ void renderRoom(const Room* room)
         ASSERT(false);
         return;
     }
+
+#ifdef USE_VRAM_ROOM
+    if (playersExtra[0].camera.view.room == room && !((uint32)room->data.vertices & 0x06000000))
+    {
+        memcpy(vramPtr, room->data.quads, room->info->quadsCount * sizeof(RoomQuad));
+        room->data.quads = (RoomQuad*)vramPtr;
+        vramPtr += room->info->quadsCount * sizeof(RoomQuad);
+
+        if ((uint32)vramPtr & 3) vramPtr += 2;
+
+        memcpy(vramPtr, room->data.triangles, room->info->trianglesCount * sizeof(RoomTriangle));
+        room->data.triangles = (RoomTriangle*)vramPtr;
+        vramPtr += room->info->trianglesCount * sizeof(RoomTriangle);
+
+        if ((uint32)vramPtr & 3) vramPtr += 2;
+
+        memcpy(vramPtr, room->data.vertices, room->info->verticesCount * sizeof(RoomVertex));
+        room->data.vertices = (RoomVertex*)vramPtr;
+        vramPtr += room->info->verticesCount * sizeof(RoomVertex);
+    }
+#endif
 
     {
         PROFILE(CNT_TRANSFORM);
@@ -873,13 +893,13 @@ void renderMesh(const Mesh* mesh)
 
     const uint8* ptr = (uint8*)mesh + sizeof(Mesh);
 
-    const MeshVertex* vertices = (MeshVertex*)ptr;
-    ptr += vCount * sizeof(vertices[0]);
-
     MeshQuad* quads = (MeshQuad*)ptr;
     ptr += mesh->rCount * sizeof(MeshQuad);
 
     MeshTriangle* triangles = (MeshTriangle*)ptr;
+    ptr += mesh->tCount * sizeof(MeshTriangle);
+
+    const MeshVertex* vertices = (MeshVertex*)ptr;
 
     {
         PROFILE(CNT_TRANSFORM);
@@ -905,6 +925,11 @@ void renderShadow(int32 x, int32 z, int32 sx, int32 sz)
         ASSERT(false);
         return;
     }
+
+    x >>= MESH_SHIFT;
+    z >>= MESH_SHIFT;
+    sx >>= MESH_SHIFT;
+    sz >>= MESH_SHIFT;
 
     int16 xns1 = x - sx;
     int16 xps1 = x + sx;
@@ -1108,20 +1133,15 @@ void renderGlyph(int32 vx, int32 vy, int32 index)
     Vertex* v1 = gVerticesBase++;
     v1->x = l;
     v1->y = t;
-    //v1->z = z;
     v1->g = 16;
 
     Vertex* v2 = gVerticesBase++;
     v2->x = r;
     v2->y = b;
-    //v2->z = z;
-    //v2->g = vg;
 
     Face* f = faceAdd(0);
     f->flags = (FACE_TYPE_SPRITE << FACE_TYPE_SHIFT) | index;
     f->indices[0] = v1 - gVertices;
-
-    gVerticesBase += 2;
 }
 
 #define BAR_HEIGHT  5
@@ -1133,14 +1153,8 @@ const int32 BAR_COLORS[BAR_MAX][5] = {
     { 43, 44, 43, 42, 41 },
 };
 
-X_NOINLINE void renderBorder(int32 x, int32 y, int32 width, int32 height, int32 shade, int32 color1, int32 color2, int32 z)
+X_NOINLINE void renderBorder(int32 x, int32 y, int32 width, int32 height, int32 color1, int32 color2, int32 z)
 {
-    // background
-    if (shade >= 0) {
-        renderFill(x + 1, y + 1, width - 2, height - 2, shade, z);
-    }
-
-    // frame
     renderLine(x + 1, y, width - 2, 1, color1, z);
     renderLine(x + 1, y + height - 1, width - 2, 1, color2, z);
     renderLine(x, y, 1, height, color1, z);
@@ -1150,9 +1164,9 @@ X_NOINLINE void renderBorder(int32 x, int32 y, int32 width, int32 height, int32 
 void renderBar(int32 x, int32 y, int32 width, int32 value, BarType type)
 {
     // colored bar
-    int32 ix = x + 2;
-    int32 iy = y + 2;
-    int32 w = value * width >> 8;
+    int32 ix = x + 1;
+    int32 iy = y + 1;
+    int32 w = value* width >> 8;
 
     if (w > 0)
     {
@@ -1162,7 +1176,12 @@ void renderBar(int32 x, int32 y, int32 width, int32 value, BarType type)
         }
     }
 
-    renderBorder(x, y, width + 4, BAR_HEIGHT + 4, 27, 19, 17, 0);
+    if (w < width)
+    {
+        renderFill(x + 1 + w, y + 1, width - w, BAR_HEIGHT, 27, 0);
+    }
+
+    renderBorder(x, y, width + 2, BAR_HEIGHT + 2, 19, 17, 0);
 }
 
 void renderBackground(const void* background)

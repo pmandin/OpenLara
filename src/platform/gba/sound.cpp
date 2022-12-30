@@ -17,30 +17,29 @@ int32 IMA_STEP[] = { // IWRAM !
 
 #if defined(__GBA__) && defined(USE_ASM)
     extern const uint8_t TRACKS_IMA[];
-    // the sound mixer works during VBlank, this is a great opportunity for exclusive access to VRAM without any perf penalties
-    // so we use part of offscreen VRAM as sound buffers (704 + 384 = 1088 bytes)
-    int32* mixerBuffer = (int32*)(MEM_VRAM + VRAM_PAGE_SIZE + FRAME_WIDTH * FRAME_HEIGHT);
-    uint8* soundBuffer = (uint8*)(MEM_VRAM + VRAM_PAGE_SIZE + FRAME_WIDTH * FRAME_HEIGHT + SND_SAMPLES * sizeof(int32)); // use 2k of VRAM after the first frame buffer as sound buffer
 #else
     extern const void* TRACKS_IMA;
-    int32 mixerBuffer[SND_SAMPLES];
-    uint8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
 #endif
 
+int8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
+
 #ifdef USE_ASM
-    #define sndIMA      sndIMA_asm
-    #define sndPCM      sndPCM_asm
-    #define sndWrite    sndWrite_asm
+    #define sndIMA_fill sndIMA_fill_asm
+    #define sndPCM_fill sndPCM_fill_asm
+    #define sndPCM_mix  sndPCM_mix_asm
+    #define sndClear    sndClear_asm
 
     extern "C" {
-        void sndIMA_asm(IMA_STATE &state, int32* buffer, const uint8* data, int32 size);
-        int32 sndPCM_asm(int32 pos, int32 inc, int32 size, int32 volume, const uint8* data, int32* buffer, int32 count);
-        void sndWrite_asm(uint8* buffer, int32 count, int32 *data);
+        void sndClear_asm(int8* buffer);
+        void sndIMA_fill_asm(IMA_STATE &state, int8* buffer, const uint8* data, int32 size);
+        int32 sndPCM_fill_asm(int32 pos, int32 inc, int32 size, int32 volume, const uint8* data, int8* buffer);
+        int32 sndPCM_mix_asm(int32 pos, int32 inc, int32 size, int32 volume, const uint8* data, int8* buffer);
     }
 #else
-    #define sndIMA      sndIMA_c
-    #define sndPCM      sndPCM_c
-    #define sndWrite    sndWrite_c
+    #define sndIMA_fill sndIMA_c
+    #define sndPCM_fill sndPCM_c
+    #define sndPCM_mix  sndPCM_c
+    #define sndClear(b) dmaFill(b, SND_ENCODE(0), SND_SAMPLES * sizeof(b[0]))
 
 #define DECODE_IMA_4(n)\
     step = IMA_STEP[idx];\
@@ -56,14 +55,16 @@ int32 IMA_STEP[] = { // IWRAM !
     } else {\
         smp += step >> 3;\
     }\
-    *buffer++ = smp >> (16 - (8 + SND_VOL_SHIFT));
+    amp = smp >> 8;\
+    *buffer++ = SND_ENCODE(X_CLAMP(amp, SND_MIN, SND_MAX));
 
-void sndIMA_c(IMA_STATE &state, int32* buffer, const uint8* data, int32 size)
+void sndIMA_c(IMA_STATE &state, int8* buffer, const uint8* data, int32 size)
 {
     uint32 step, index;
 
     int32 smp = state.smp;
     int32 idx = state.idx;
+    int32 amp;
 
     for (int32 i = 0; i < size; i++)
     {
@@ -77,32 +78,23 @@ void sndIMA_c(IMA_STATE &state, int32* buffer, const uint8* data, int32 size)
     state.idx = idx;
 }
 
-int32 sndPCM_c(int32 pos, int32 inc, int32 size, int32 volume, const uint8* data, int32* buffer, int32 count)
+int32 sndPCM_c(int32 pos, int32 inc, int32 size, int32 volume, const uint8* data, int8* buffer)
 {
-    int32 last = pos + count * inc;
+    int32 last = pos + SND_SAMPLES * inc;
     if (last > size) {
         last = size;
     }
 
     while (pos < last)
     {
-        *buffer++ += SND_DECODE(data[pos >> SND_FIXED_SHIFT]) * volume;
+        int32 amp = SND_DECODE(*(uint8*)buffer) + ((SND_DECODE(data[pos >> SND_FIXED_SHIFT]) * volume) >> SND_VOL_SHIFT);
+        *buffer++ = SND_ENCODE(X_CLAMP(amp, SND_MIN, SND_MAX));
         pos += inc;
     }
 
     return pos;
 }
-
-void sndWrite_c(uint8* buffer, int32 count, int32 *data)
-{
-    for (int32 i = 0; i < count; i++)
-    {
-        int32 samp = X_CLAMP(data[i] >> SND_VOL_SHIFT, SND_MIN, SND_MAX);
-        buffer[i] = SND_ENCODE(samp);
-    }
-}
 #endif
-
 
 struct Music
 {
@@ -111,18 +103,18 @@ struct Music
     int32         pos;
     IMA_STATE     state;
 
-    void fill(int32* buffer, int32 count)
+    void fill(int8* buffer)
     {
-        int32 len = X_MIN(size - pos, count >> 1);
+        int32 len = X_MIN(size - pos, SND_SAMPLES >> 1);
 
-        sndIMA(state, buffer, data + pos, len);
+        sndIMA_fill(state, buffer, data + pos, len);
 
         pos += len;
 
         if (pos >= size)
         {
             data = NULL;
-            memset(buffer, 0, (count - (len << 1)) * sizeof(buffer[0]));
+            memset(buffer, 0, (SND_SAMPLES - (len << 1)) * sizeof(buffer[0]));
         }
     }
 };
@@ -135,9 +127,19 @@ struct Sample
     int32        volume;
     const uint8* data;
 
-    void fill(int32* buffer, int32 count)
+    void mix(int8* buffer)
     {
-        pos = sndPCM(pos, inc, size, volume, data, buffer, count);
+        pos = sndPCM_mix(pos, inc, size, volume, data, buffer);
+
+        if (pos >= size)
+        {
+            data = NULL;
+        }
+    }
+
+    void fill(int8* buffer)
+    {
+        pos = sndPCM_fill(pos, inc, size, volume, data, buffer);
 
         if (pos >= size)
         {
@@ -276,23 +278,18 @@ void sndStop()
     music.data = NULL;
 }
 
-void sndFill(uint8* buffer, int32 count)
+void sndFill(int8* buffer)
 {
 #ifdef PROFILE_SOUNDTIME
     PROFILE_CLEAR();
     PROFILE(CNT_SOUND);
 #endif
+    bool mix = (music.data != NULL);
 
-    if ((channelsCount == 0) && !music.data)
-    {
-        dmaFill(buffer, SND_ENCODE(0), count);
-        return;
-    }
-
-    if (music.data) {
-        music.fill(mixerBuffer, count);
+    if (mix) {
+        music.fill(buffer);
     } else {
-        dmaFill(mixerBuffer, 0, SND_SAMPLES * sizeof(int32));
+        sndClear(buffer);
     }
 
     int32 ch = channelsCount;
@@ -300,12 +297,15 @@ void sndFill(uint8* buffer, int32 count)
     {
         Sample* sample = channels + ch;
 
-        sample->fill(mixerBuffer, count);
+        if (mix)
+            sample->mix(buffer);
+        else
+            sample->fill(buffer);
 
         if (!sample->data) {
             channels[ch] = channels[--channelsCount];
         }
-    }
 
-    sndWrite(buffer, count, mixerBuffer);
+        mix = true;
+    }
 }

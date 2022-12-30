@@ -35,7 +35,7 @@ maxXY       .req vz
 
 tmp         .req vy
 dx          .req vz
-dy          .req tmp
+dy          .req vy
 dz          .req vz
 fog         .req vz
 
@@ -62,7 +62,6 @@ transformRoomUW_asm:
 
     ldr res, =gVerticesBase
     ldr res, [res]
-    add res, #VERTEX_G
 
     ldr tmp, =viewportRel
     ldmia tmp, {spMinXY, spMaxXY}
@@ -75,8 +74,6 @@ transformRoomUW_asm:
 
     stmfd sp!, {spMinXY, spMaxXY, spRandLUT, spFrame, spCaustLUT}
 
-    mov mask, #(0xFF << 10)
-
     ldr m, =gMatrixPtr
     ldr m, [m]
     fiq_on
@@ -85,43 +82,36 @@ transformRoomUW_asm:
     asr mw1, #FIXED_SHIFT
     fiq_off
     ldmia m, {mx2, my2, mz2, mw2}
-    asr mw2, #FIXED_SHIFT
+    asr mw2, #(FIXED_SHIFT + OT_SHIFT)
 
 .loop:
     // unpack vertex
-    ldmia vertices!, {v}
+    ldr v, [vertices], #4
 
-    and vz, mask, v, lsr #6
-    and vy, v, #0xFF00
-    and vx, mask, v, lsl #10
+    mov mask, #0xFF
+    and vx, mask, v
+    and vy, mask, v, lsr #8
+    and vz, mask, v, lsr #16
+    mov vg, v, lsr #(24 + 3)
 
     // transform z
     mul z, mx2, vx
     mla z, my2, vy, z
     mla z, mz2, vz, z
-    add z, mw2, z, asr #FIXED_SHIFT
-
-    // skip if vertex is out of z-range
-    add z, #VIEW_OFF
-    cmp z, #(VIEW_OFF + VIEW_OFF + VIEW_MAX)
-    movhi vg, #(CLIP_NEAR + CLIP_FAR)
-    bhi .skip
-
-    and vg, mask, v, lsr #14
-    sub z, #VIEW_OFF
+    add z, mw2, z, asr #(FIXED_SHIFT - 8 + OT_SHIFT)
 
     fiq_on
     // transform y
     mul y, mx1, vx
     mla y, my1, vy, y
     mla y, mz1, vz, y
-    add y, mw1, y, asr #FIXED_SHIFT
+    add y, mw1, y, asr #(FIXED_SHIFT - 8)
 
     // transform x
     mul x, mx0, vx
     mla x, my0, vy, x
     mla x, mz0, vz, x
-    add x, mw0, x, asr #FIXED_SHIFT
+    add x, mw0, x, asr #(FIXED_SHIFT - 8)
     fiq_off
 
     // caustics
@@ -133,27 +123,24 @@ transformRoomUW_asm:
     and rand, #(MAX_CAUSTICS - 1)
     ldr caust, [sp, #SP_CAUST]
     ldr caust, [caust, rand, lsl #2]
-    add vg, caust, lsl #5
+    add vg, caust, asr #8
 
     // fog
-    cmp z, #FOG_MIN
-    subgt fog, z, #FOG_MIN
-    addgt vg, fog, lsl #6
-    lsr vg, #13
-    cmp vg, #31
+    subs fog, z, #(FOG_MIN >> OT_SHIFT)
+    addgt vg, fog, lsr #(3 + FOG_SHIFT - OT_SHIFT)
+    cmpgt vg, #31
     movgt vg, #31
 
     // z clipping
-    cmp z, #VIEW_MIN
-    movle z, #VIEW_MIN
-    orrle vg, #CLIP_NEAR
-    cmp z, #VIEW_MAX
-    movge z, #VIEW_MAX
-    orrge vg, #CLIP_FAR
+    cmp z, #(VIEW_MIN >> OT_SHIFT)
+    movle z, #(VIEW_MIN >> OT_SHIFT)
+    orrle vg, #CLIP_PLANE
+    cmp z, #(VIEW_MAX >> OT_SHIFT)
+    movge z, #(VIEW_MAX >> OT_SHIFT)
+    orrge vg, #CLIP_PLANE
 
     // project
-    mov dz, z, lsr #4
-    add dz, z, lsr #6
+    add dz, z, z, lsr #2
     divLUT tmp, dz
     mul dx, x, tmp
     mul dy, y, tmp
@@ -185,13 +172,10 @@ transformRoomUW_asm:
     orrhi vg, #CLIP_FRAME
 
     // store the result
-    strh x, [res, #-6]
-    strh y, [res, #-4]
-    strh z, [res, #-2]
-
-    mov mask, #(0xFF << 10)
-.skip:
-    strh vg, [res], #8
+    strh x, [res], #2
+    strh y, [res], #2
+    strh z, [res], #2
+    strh vg, [res], #2
 
     subs count, #1
     bne .loop

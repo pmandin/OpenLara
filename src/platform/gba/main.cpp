@@ -95,7 +95,7 @@ bool osLoadGame()
 
 void osJoyVibrate(int32 index, int32 L, int32 R) {}
 
-extern uint8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
+extern int8 soundBuffer[2 * SND_SAMPLES + 32]; // 32 bytes of silence for DMA overrun while interrupt
 
 HWAVEOUT waveOut;
 WAVEFORMATEX waveFmt = { WAVE_FORMAT_PCM, 1, SND_OUTPUT_FREQ, SND_OUTPUT_FREQ, 1, 8, sizeof(waveFmt) };
@@ -123,7 +123,7 @@ void soundFill()
 {
     WAVEHDR *waveHdr = waveBuf + curSoundBuffer;
     waveOutUnprepareHeader(waveOut, waveHdr, sizeof(WAVEHDR));
-    sndFill((uint8*)waveHdr->lpData, SND_SAMPLES);
+    sndFill((int8*)waveHdr->lpData);
     waveOutPrepareHeader(waveOut, waveHdr, sizeof(WAVEHDR));
     waveOutWrite(waveOut, waveHdr, sizeof(WAVEHDR));
     curSoundBuffer ^= 1;
@@ -482,7 +482,7 @@ void updateInput()
     if (key_is_down(KEY_SELECT))  keys |= IK_SELECT;
 }
 
-extern uint8* soundBuffer;
+extern int8 soundBuffer[2 * SND_SAMPLES + 32];
 
 void soundInit()
 {
@@ -497,14 +497,14 @@ void soundInit()
 
 void soundFill()
 {
-    if (curSoundBuffer == 1) {
+    if (curSoundBuffer) {
         REG_DMA1CNT = 0;
         REG_DMA1SAD = (u32)soundBuffer;
         REG_DMA1CNT = DMA_DST_FIXED | DMA_REPEAT | DMA_16 | DMA_AT_FIFO | DMA_ENABLE;
     }
 
-    sndFill(soundBuffer + curSoundBuffer * SND_SAMPLES, SND_SAMPLES);
-    curSoundBuffer ^= 1;
+    sndFill(soundBuffer + curSoundBuffer);
+    curSoundBuffer ^= SND_SAMPLES;
 }
 
 void vblank()

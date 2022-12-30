@@ -38,10 +38,9 @@
 .equ CLIP_RIGHT,    ((1 << 1) << 8)
 .equ CLIP_TOP,      ((1 << 2) << 8)
 .equ CLIP_BOTTOM,   ((1 << 3) << 8)
-.equ CLIP_FAR,      ((1 << 4) << 8)
-.equ CLIP_NEAR,     ((1 << 5) << 8)
-.equ CLIP_FRAME,    ((1 << 6) << 8)
-.equ CLIP_DISCARD,  (CLIP_LEFT + CLIP_RIGHT + CLIP_TOP + CLIP_BOTTOM + CLIP_FAR + CLIP_NEAR)
+.equ CLIP_PLANE,    ((1 << 4) << 8)
+.equ CLIP_FRAME,    ((1 << 5) << 8)
+.equ CLIP_DISCARD,  (CLIP_LEFT + CLIP_RIGHT + CLIP_TOP + CLIP_BOTTOM + CLIP_PLANE)
 .equ CLIP_MASK,     0xFF00
 
 .equ FACE_TYPE_SHIFT,   14
@@ -71,21 +70,16 @@
 
 .equ FIXED_SHIFT,   14
 .equ PROJ_SHIFT,    4
-.equ OT_SHIFT,      4
+.equ MESH_SHIFT,    2
 
-.equ VIEW_DIST,     (1024 * 10)
-.equ FOG_SHIFT,     1
-.equ FOG_MAX,       VIEW_DIST
-.equ FOG_MIN,       (FOG_MAX - (8192 >> FOG_SHIFT))
-.equ VIEW_MIN,      (64)
-.equ VIEW_MAX,      (VIEW_DIST)
+.equ VIEW_MIN,      64
+.equ VIEW_MAX,      (10 << 10)
 .equ VIEW_OFF,      4096
+.equ FOG_SHIFT,     4
+.equ FOG_MIN,       (VIEW_MAX - 2048)
 
-.equ OT_SIZE,       641
-
-.equ VIEW_MIN_F,    (VIEW_MIN << FIXED_SHIFT)
-.equ VIEW_MAX_F,    (VIEW_MAX << FIXED_SHIFT)
-.equ VIEW_OFF_F,    (VIEW_OFF << FIXED_SHIFT)
+.equ OT_SHIFT,      4
+.equ OT_SIZE,       ((VIEW_MAX >> OT_SHIFT) + 1)
 
 .equ MAX_CAUSTICS,   32
 .equ MAX_RAND_TABLE, 32
@@ -93,6 +87,9 @@
 
 .equ MIN_INT32,     0x80000000
 .equ MAX_INT32,     0x7FFFFFFF
+
+.equ SND_VOL_SHIFT,     6
+.equ SND_FIXED_SHIFT,   8
 
 // res = divTable[x] (uint16)
 .macro divLUT res, x
@@ -107,31 +104,32 @@
 // vx2 - vg2
 // vy2 - vg2
 .macro CCW skip
-    ldrsh vx0, [vp0, #VERTEX_X]
-    ldrsh vy0, [vp0, #VERTEX_Y]
+    ldr vy0, [vp0, #VERTEX_X]       // yyxx
+    mov vx0, vy0, lsl #16
     ldrsh vx2, [vp2, #VERTEX_X]
     ldrsh vy1, [vp1, #VERTEX_Y]
-    rsb vx2, vx2, vx0 // reverse order for mla
-    sub vy1, vy1, vy0
-    mul vy1, vx2, vy1
+    rsb vx2, vx2, vx0, asr #16      // reverse order for mla
+    subs vy1, vy1, vy0, asr #16
+    mulne vy1, vx2, vy1
     ldrsh vx1, [vp1, #VERTEX_X]
-    sub vx0, vx1, vx0
+    sub vx0, vx1, vx0, asr #16
     ldrsh vy2, [vp2, #VERTEX_Y]
-    sub vy0, vy2, vy0
-    mlas vy1, vx0, vy0, vy1
+    subs vy0, vy2, vy0, asr #16
+    mulne vy0, vx0, vy0
+    adds vy1, vy0
     ble \skip
 .endm
 
-.macro scaleUV uv, tmp, f
-    asr \tmp, \uv, #16
-    mul \tmp, \f                    // u = f * int16(uv >> 16)
+.macro scaleUV uv, tmp, unused, f
+    asrs \tmp, \uv, #16
+    mulne \tmp, \f, \tmp            // u = f * int16(uv >> 16)
+    lsrne \tmp, #16
+    lslne \tmp, #16
 
-    lsl \uv, #16
-    asr \uv, #16
-    mul \uv, \f                     // v = f * int16(uv)
+    lsls \uv, \uv, #16
+    asrne \uv, #16
+    mulne \uv, \f, \uv              // v = f * int16(uv)
 
-    lsr \tmp, #16
-    lsl \tmp, #16
     orr \uv, \tmp, \uv, lsr #16     // uv = (u & 0xFFFF0000) | (v >> 16)
 .endm
 

@@ -1,11 +1,11 @@
-#ifndef H_OUT_GBA
-#define H_OUT_GBA
+#ifndef H_OUT_32X
+#define H_OUT_32X
 
 #include "common.h"
 #include "TR1_PC.h"
 #include "TR1_PSX.h"
 
-struct out_GBA
+struct out_32X
 {
     enum FaceType { // 2 high bits of face flags
         FACE_TYPE_SHADOW,
@@ -15,7 +15,11 @@ struct out_GBA
     };
 
     enum {
-        FACE_TYPE_SHIFT = 14,
+        FACE_TYPE_SHIFT = 14
+    };
+
+    enum {
+        NON_CACHE_ADDR = 0x20000000
     };
 
     struct Remap {
@@ -211,72 +215,60 @@ struct out_GBA
 
     struct RoomQuad
     {
-        int8 indices[4];
         uint16 flags;
-        uint16 unused;
+        uint16 indices[4];
 
         void write(FileStream &f) const
         {
+            f.write(flags);
             f.write(indices[0]);
             f.write(indices[1]);
             f.write(indices[2]);
             f.write(indices[3]);
-            f.write(flags);
-
-            uint16 padding = 0;
-            f.write(padding);
         }
     };
 
     struct RoomTriangle
     {
-        uint16 indices[3];
         uint16 flags;
+        uint16 indices[3];
         
         void write(FileStream &f) const
         {
+            f.write(flags);
             f.write(indices[0]);
             f.write(indices[1]);
             f.write(indices[2]);
-            f.write(flags);
         }
     };
 
     struct MeshQuad
     {
-        int8 indices[4];
         uint16 flags;
-        uint16 unused;
+        uint8 indices[4];
 
         void write(FileStream &f) const
         {
+            f.write(flags);
             f.write(indices[0]);
             f.write(indices[1]);
             f.write(indices[2]);
             f.write(indices[3]);
-            f.write(flags);
-
-            uint16 padding = 0;
-            f.write(padding);
         }
     };
 
     struct MeshTriangle
     {
-        int8 indices[4];
         uint16 flags;
-        uint16 unused;
-
+        uint8 indices[4];
+ 
         void write(FileStream &f) const
         {
+            f.write(flags);
             f.write(indices[0]);
             f.write(indices[1]);
             f.write(indices[2]);
             f.write(indices[3]);
-            f.write(flags);
-
-            uint16 padding = 0;
-            f.write(padding);
         }
     };
 
@@ -493,6 +485,7 @@ struct out_GBA
         ObjectTexture(const TR1_PC::ObjectTexture* tex)
         {
             tile = (tex->tile & 0x3FFF) << 16;
+
             uint32 uv0 = ((tex->uv0 << 16) | (tex->uv0 >> 16)) & 0xFF00FF00;
             uint32 uv1 = ((tex->uv1 << 16) | (tex->uv1 >> 16)) & 0xFF00FF00;
             uint32 uv2 = ((tex->uv2 << 16) | (tex->uv2 >> 16)) & 0xFF00FF00;
@@ -504,6 +497,11 @@ struct out_GBA
 
             uv01 = uv0 | (uv1 >> 8);
             uv23 = uv2 | (uv3 >> 8);
+
+            //uv01 = swapW(uv01);
+            //uv23 = swapW(uv23);
+
+            tile |= NON_CACHE_ADDR;
         }
 
         bool isEqual(const ObjectTexture* tex)
@@ -632,14 +630,11 @@ struct out_GBA
             if (nCount > 0) { // normals
                 vNormal = (vec3s*)ptr;
                 ptr += nCount * 3 * sizeof(int16);
-                hasNormals = 1;
             } else { // intensity
                 vIntensity = (uint16*)ptr;
                 ptr += vCount * sizeof(uint16);
-                hasNormals = 0;
             }
-
-            hasNormals = 0; // don't use dynamic per-vertex lighting on GBA
+            hasNormals = 0;
 
             rCount = *(int16*)ptr; ptr += 2;
             rFaces = (TR1_PC::Quad*)ptr; ptr += rCount * sizeof(TR1_PC::Quad);
@@ -670,22 +665,6 @@ struct out_GBA
         {
             ASSERT(vCount < 256);
 
-        #if 0 // TODO proper center/radius calc?
-            vec3s bmin = vertices[0];
-            vec3s bmax = bmin;
-
-            for (int32 j = 0; j < vCount; j++)
-            {
-                const vec3s* v = vertices + j;
-                if (v->x < bmin.x) bmin.x = v->x;
-                if (v->y < bmin.y) bmin.y = v->y;
-                if (v->z < bmin.z) bmin.z = v->z;
-                if (v->x > bmax.x) bmax.x = v->x;
-                if (v->y > bmax.y) bmax.y = v->y;
-                if (v->z > bmax.z) bmax.z = v->z;
-            }
-        #endif
-
             f.write(center.x);
             f.write(center.y);
             f.write(center.z);
@@ -698,99 +677,69 @@ struct out_GBA
             f.write(int16(0));
             f.write(int16(0));
 
+            for (int32 j = 0; j < vCount; j++)
+            {
+                struct MeshVertex32X {
+                    int16 x, y, z;
+                } v;
 
-            Array<const TR1_PC::Quad> sortedQuads;
+                v.x = vertices[j].x << 2;
+                v.y = vertices[j].y << 2;
+                v.z = vertices[j].z << 2;
+
+                f.write(v.x);
+                f.write(v.y);
+                f.write(v.z);
+            }
 
             for (int32 j = 0; j < rCount; j++)
             {
-                sortedQuads.add(rFaces + j);
-            }
-
-            for (int32 j = 0; j < crCount; j++)
-            {
-                sortedQuads.add(crFaces + j);
-            }
-
-            sortedQuads.sort(); // sort quads by indices for consistent deltas
-
-            int32 prev = 0;
-
-            for (int32 j = 0; j < sortedQuads.count; j++)
-            {
-                const TR1_PC::Quad* q = sortedQuads[j];
-
-                int32 i0 = q->indices[0];
-                int32 i1 = q->indices[1];
-                int32 i2 = q->indices[2];
-                int32 i3 = q->indices[3];
-
-                int32 p0 = i0 - prev;
-                int32 p1 = i1 - i0;
-                int32 p2 = i2 - i1;
-                int32 p3 = i3 - i2;
-                prev = i3;
-
-                ASSERT(p0 >= -128 && p0 <= 127);
-                ASSERT(p1 >= -128 && p1 <= 127);
-                ASSERT(p2 >= -128 && p2 <= 127);
-                ASSERT(p3 >= -128 && p3 <= 127);
+                TR1_PC::Quad q = rFaces[j];
+                uint16 texIndex = q.flags & FACE_TEXTURE;
 
                 MeshQuad comp;
-                comp.indices[0] = p0;
-                comp.indices[1] = p1;
-                comp.indices[2] = p2;
-                comp.indices[3] = p3;
+                comp.indices[0] = uint8(q.indices[0]);
+                comp.indices[1] = uint8(q.indices[1]);
+                comp.indices[2] = uint8(q.indices[2]);
+                comp.indices[3] = uint8(q.indices[3]);
+                comp.flags = remap ? remap->textures[texIndex] : texIndex;
 
-                bool textured = (q >= rFaces) && (q < (rFaces + rCount));
-
-                if (textured)
-                {
-                    uint16 texIndex = q->flags & FACE_TEXTURE;
-                    comp.flags = remap ? remap->textures[texIndex] : texIndex;
-                    if (level->objectTextures[texIndex].attribute & TEX_ATTR_AKILL)
-                    {
-                        comp.flags |= (FACE_TYPE_FTA << FACE_TYPE_SHIFT);
-                    }
-                    else
-                    {
-                        comp.flags |= (FACE_TYPE_FT << FACE_TYPE_SHIFT);
-                    }
-                }
-                else
-                {
-                    comp.flags = q->flags & FACE_TEXTURE;
-                    comp.flags |= (FACE_TYPE_F << FACE_TYPE_SHIFT);
+                if (level->objectTextures[texIndex].attribute & TEX_ATTR_AKILL) {
+                    comp.flags |= (FACE_TYPE_FTA << FACE_TYPE_SHIFT);
+                } else {
+                    comp.flags |= (FACE_TYPE_FT << FACE_TYPE_SHIFT);
                 }
 
                 comp.write(f);
             }
 
-            prev = 0;
+            for (int32 j = 0; j < crCount; j++)
+            {
+                TR1_PC::Quad q = crFaces[j];
+
+                MeshQuad comp;
+                comp.indices[0] = uint8(q.indices[0]);
+                comp.indices[1] = uint8(q.indices[1]);
+                comp.indices[2] = uint8(q.indices[2]);
+                comp.indices[3] = uint8(q.indices[3]);
+                comp.flags = q.flags & FACE_TEXTURE;
+                comp.flags |= (FACE_TYPE_F << FACE_TYPE_SHIFT);
+
+                comp.write(f);
+            }
+
             for (int32 j = 0; j < tCount; j++)
             {
                 TR1_PC::Triangle t = tFaces[j];
                 uint16 texIndex = t.flags & FACE_TEXTURE;
 
-                int32 i0 = t.indices[0];
-                int32 i1 = t.indices[1];
-                int32 i2 = t.indices[2];
-
-                int32 p0 = i0 - prev;
-                int32 p1 = i1 - i0;
-                int32 p2 = i2 - i1;
-                prev = i2;
-
-                ASSERT(p0 >= -128 && p0 <= 127);
-                ASSERT(p1 >= -128 && p1 <= 127);
-                ASSERT(p2 >= -128 && p2 <= 127);
-
                 MeshTriangle comp;
-                comp.indices[0] = p0;
-                comp.indices[1] = p1;
-                comp.indices[2] = 0;    // asr hack
-                comp.indices[3] = p2;
-
+                comp.indices[0] = uint8(t.indices[0]);
+                comp.indices[1] = uint8(t.indices[1]);
+                comp.indices[2] = uint8(t.indices[2]);
+                comp.indices[3] = 0;
                 comp.flags = remap ? remap->textures[texIndex] : texIndex;
+
                 if (level->objectTextures[texIndex].attribute & TEX_ATTR_AKILL) {
                     comp.flags |= (FACE_TYPE_FTA << FACE_TYPE_SHIFT);
                 } else {
@@ -804,44 +753,15 @@ struct out_GBA
             {
                 TR1_PC::Triangle t = ctFaces[j];
 
-                int32 i0 = t.indices[0];
-                int32 i1 = t.indices[1];
-                int32 i2 = t.indices[2];
-
-                int32 p0 = i0 - prev;
-                int32 p1 = i1 - i0;
-                int32 p2 = i2 - i1;
-                prev = i2;
-
-                ASSERT(p0 >= -128 && p0 <= 127);
-                ASSERT(p1 >= -128 && p1 <= 127);
-                ASSERT(p2 >= -128 && p2 <= 127);
-
                 MeshTriangle comp;
-                comp.indices[0] = p0;
-                comp.indices[1] = p1;
-                comp.indices[2] = 0;    // asr hack
-                comp.indices[3] = p2;
-
+                comp.indices[0] = uint8(t.indices[0]);
+                comp.indices[1] = uint8(t.indices[1]);
+                comp.indices[2] = uint8(t.indices[2]);
+                comp.indices[3] = 0;
                 comp.flags = t.flags & FACE_TEXTURE;
                 comp.flags |= (FACE_TYPE_F << FACE_TYPE_SHIFT);
 
                 comp.write(f);
-            }
-
-            for (int32 j = 0; j < vCount; j++)
-            {
-                struct MeshVertexGBA {
-                    int16 x, y, z;
-                } v;
-
-                v.x = vertices[j].x >> 2;
-                v.y = vertices[j].y >> 2;
-                v.z = vertices[j].z >> 2;
-
-                f.write(v.x);
-                f.write(v.y);
-                f.write(v.z);
             }
         }
     };
@@ -1490,14 +1410,14 @@ struct out_GBA
         int32 pz = v.pos.z >> 8;
 
         ASSERT(py >= 0);
-        ASSERT(px < (32 << 2));
-        ASSERT(py < 64);
-        ASSERT(pz < (32 << 2));
+        ASSERT(px < 128);
+        ASSERT(py < 128);
+        ASSERT(pz < 128);
 
         comp.x = px;
         comp.y = py;
         comp.z = pz;
-        comp.g = v.lighting >> 5;
+        comp.g = v.lighting >> 8;
 
         for (int32 i = 0; i < roomVerticesCount; i++)
         {
@@ -1590,22 +1510,38 @@ struct out_GBA
     uint32 writeLightmap(FileStream &f, TR1_PC* level)
     {
         uint32 offset = f.align4();
-    #if 1
-        for (int32 i = 0; i < 32; i++) {
-            level->lightmap[i * 256] = 0;
-        }
-        f.write(level->lightmap, 256 * 32);
-    #else
-        uint8 lmap[256 * 32];
-        for (int32 i = 0; i < 32; i++)
-        {
-            for (int32 j = 0; j < 256; j++)
+
+        { // index 0 is transparent
+            uint8* ptr = level->lightmap;
+            for (int32 i = 0; i < 32; i++)
             {
-                lmap[j * 32 + i] = level->lightmap[i * 256 + j];
+                *ptr++ = 0;
+                for (int32 j = 1; j < 256; j++, ptr++)
+                {
+                    if (*ptr == 0) {
+                        *ptr = 1; // non-zero black index
+                    }
+                }
             }
         }
-        f.write(lmap, 256 * 32);
-    #endif
+
+        { // to save extu.b instruction we rearrange lightmap for the range [-128..127]
+            uint8 remap[256];
+
+            uint8* ptr = level->lightmap;
+            for (int32 i = 0; i < 32; i++)
+            {
+                for (int32 j = 0; j < 256; j++)
+                {
+                    remap[int8(j) + 128] = ptr[j];
+                }
+                memcpy(ptr, remap, 256);
+                ptr += 256;
+            }
+        }
+
+        f.write(level->lightmap, 32 * 256);
+
         return offset;
     }
 
@@ -1669,37 +1605,24 @@ struct out_GBA
             roomVerticesCount = 0;
 
             info.quads = f.align4();
-
-            int32 prev = 0;
-
             for (int32 i = 0; i < room->qCount; i++)
             {
                 TR1_PC::Quad q = room->quads[i];
                 uint16 texIndex = q.flags & FACE_TEXTURE;
 
-                int32 i0 = addRoomVertex(info.yTop, room->vertices[q.indices[0]]);
-                int32 i1 = addRoomVertex(info.yTop, room->vertices[q.indices[1]]);
-                int32 i2 = addRoomVertex(info.yTop, room->vertices[q.indices[2]]);
-                int32 i3 = addRoomVertex(info.yTop, room->vertices[q.indices[3]]);
-
-                int32 p0 = i0 - prev;
-                int32 p1 = i1 - i0;
-                int32 p2 = i2 - i1;
-                int32 p3 = i3 - i2;
-                prev = i3;
-
-                ASSERT(p0 >= -128 && p0 <= 127);
-                ASSERT(p1 >= -128 && p1 <= 127);
-                ASSERT(p2 >= -128 && p2 <= 127);
-                ASSERT(p3 >= -128 && p3 <= 127);
-
                 RoomQuad comp;
-                comp.indices[0] = p0;
-                comp.indices[1] = p1;
-                comp.indices[2] = p2;
-                comp.indices[3] = p3;
-
+                comp.indices[0] = addRoomVertex(info.yTop, room->vertices[q.indices[0]]);
+                comp.indices[1] = addRoomVertex(info.yTop, room->vertices[q.indices[1]]);
+                comp.indices[2] = addRoomVertex(info.yTop, room->vertices[q.indices[2]]);
+                comp.indices[3] = addRoomVertex(info.yTop, room->vertices[q.indices[3]]);
                 comp.flags = remap ? remap->textures[texIndex] : texIndex;
+
+                // pre-shift
+                comp.indices[0] <<= 1;
+                comp.indices[1] <<= 1;
+                comp.indices[2] <<= 1;
+                comp.indices[3] <<= 1;
+
                 if (level->objectTextures[texIndex].attribute & TEX_ATTR_AKILL) {
                     comp.flags |= (FACE_TYPE_FTA << FACE_TYPE_SHIFT);
                 } else {
@@ -1720,6 +1643,11 @@ struct out_GBA
                 comp.indices[1] = addRoomVertex(info.yTop, room->vertices[t.indices[1]]);
                 comp.indices[2] = addRoomVertex(info.yTop, room->vertices[t.indices[2]]);
                 comp.flags = remap ? remap->textures[texIndex] : texIndex;
+
+                // pre-shift
+                comp.indices[0] <<= 1;
+                comp.indices[1] <<= 1;
+                comp.indices[2] <<= 1;
 
                 if (level->objectTextures[texIndex].attribute & TEX_ATTR_AKILL) {
                     comp.flags |= (FACE_TYPE_FTA << FACE_TYPE_SHIFT);
@@ -1985,7 +1913,7 @@ struct out_GBA
         return offset;
     }
 
-    void convertGBA(FileStream &f, TR1_PC* pc)
+    void convert32X(FileStream &f, TR1_PC* pc)
     {
         pc->fixHeadMask();
 
@@ -2170,6 +2098,7 @@ struct out_GBA
             pc->soundOffsets[i] = uint32(dst - pc->soundData);
         }
 
+    #if 0   // no sound
         header.soundMap = f.align4();
         f.write(pc->soundMap, 256);
 
@@ -2181,6 +2110,7 @@ struct out_GBA
 
         header.soundOffsets = f.align4();
         f.write(pc->soundOffsets, pc->soundOffsetsCount);
+    #endif
 
         f.setPos(0);
         header.write(f);
@@ -2371,392 +2301,26 @@ struct out_GBA
         }    
     }
 
-    void convertWAD(FileStream &f, TR1_PC** pc, TR1_PSX** psx)
-    {
-        TR1_PC* level;
-        int32 id;
-
-        #define LEVELS_LOOP() for (id = 0, level = pc[id]; id < LVL_MAX; id++, level = pc[id])
-
-        Header headers[LVL_MAX];
-        f.seek(sizeof(headers));
-
-    // audio tracks
-        convertTracks(f, "tracks/conv");
-
-    // collect unique textures
-        LEVELS_LOOP()
-        {
-            markAnimatedTextures(level);
-            addTextures(level);
-        }
-
-        linkTextures();
-
-        packTiles(f);
-
-        remapTextures();
-
-        printf("textures: %d\n", objectTextures.count);
-        printf("sprites: %d\n", spriteTextures.count);
-
-        ASSERT(objectTextures.count < (1 << FACE_TYPE_SHIFT));
-
-    // collect unique meshes
-        LEVELS_LOOP()
-        {
-            ASSERT(level->meshOffsetsCount < MAX_MESHES);
-
-            for (int32 i = 0; i < level->meshOffsetsCount; i++)
-            {
-                const uint8* ptr = (uint8*)level->meshData + level->meshOffsets[i];
-
-                Mesh* mesh = new Mesh(level, ptr);
-                remaps[id].meshes[i] = addMesh(mesh);
-            }
-        }
-
-    // collect unique animations
-        LEVELS_LOOP()
-        {
-            ASSERT(level->animsCount < MAX_ANIMS);
-
-            for (int32 i = 0; i < level->modelsCount; i++)
-            {
-                const TR1_PC::Model &curModel = level->models[i];
-                if (curModel.animIndex == 0xFFFF)
-                    continue;
-
-                uint8* startPtr = (uint8*)&level->frameData[level->anims[curModel.animIndex].frameOffset >> 1];
-                uint8* endPtr = (uint8*)&level->frameData[level->frameDataSize];
-                
-                for (int32 j = i + 1; j < level->modelsCount; j++)
-                {
-                    const TR1_PC::Model &nextModel = level->models[j];
-                    if (nextModel.animIndex == 0xFFFF)
-                        continue;
-
-                    endPtr = (uint8*)&level->frameData[level->anims[nextModel.animIndex].frameOffset >> 1];
-                    break;
-                }
-
-                AnimFrames* af = new AnimFrames(startPtr, endPtr);
-                remaps[id].animFrames[i] = addAnimFrames(af);
-            }
-        }
-
-    // collect unique models
-        LEVELS_LOOP()
-        {
-            printf("anims: %d\n", level->animsCount);
-
-            for (int32 i = 0; i < level->modelsCount; i++)
-            {
-                Model model;
-                model.init(level, level->models[i]);
-                remaps[id].models[i] = addModel(model);
-            }
-        }
-
-        printf("Meshes: %d\n", meshes.count);
-        printf("Models: %d\n", models.count);
-        printf("Animations: %d\n", animFrames.count);
-
-    // write objectTextures
-        headers[0].objectTextures = f.align4();
-        for (int32 i = 0; i < objectTextures.count; i++)
-        {
-            objectTextures[i]->write(f);
-        }
-
-    // write spriteTextures
-        headers[0].spriteTextures = f.align4();
-        for (int32 i = 0; i < spriteTextures.count; i++)
-        {
-            spriteTextures[i]->write(f);
-        }
-
-    // write meshes
-        headers[0].meshData = f.align4();
-        for (int32 i = 0; i < meshes.count; i++)
-        {
-            meshes[i]->offset = f.align4();
-            meshes[i]->write(f, &remaps[meshes[i]->level->id]);
-        }
-
-    // write models
-        headers[0].models = f.align4();
-        for (int32 i = 0; i < models.count; i++)
-        {
-            models[i]->write(f);
-        }
-
-    // write anims
-        headers[0].frameData = f.align4();
-        for (int32 i = 0; i < animFrames.count; i++)
-        {
-            animFrames[i]->write(f);
-        }
-
-    // set global array pointers
-        LEVELS_LOOP()
-        {
-            headers[id].objectTextures  = headers[0].objectTextures;
-            headers[id].spriteTextures  = headers[0].spriteTextures;
-            headers[id].meshData        = headers[0].meshData;
-            headers[id].models          = headers[0].models;
-            headers[id].frameData       = headers[0].frameData;
-        }
-
-    // palette
-        LEVELS_LOOP()
-        {
-            headers[id].palette = writePalette(f, level);
-        }
-
-    // lightmaps
-        LEVELS_LOOP()
-        {
-            headers[id].lightmap = writeLightmap(f, level);
-        }
-
-    // rooms
-        LEVELS_LOOP()
-        {
-            headers[id].rooms = writeRooms(f, level, &remaps[id]);
-        }
-
-    // floors data
-        LEVELS_LOOP()
-        {
-            headers[id].floors = writeFloors(f, level);
-        }
-
-    // mesh offsets
-        LEVELS_LOOP()
-        {
-            headers[id].meshesCount = level->meshOffsetsCount;
-            headers[id].meshOffsets = f.align4();
-            for (int32 i = 0; i < level->meshOffsetsCount; i++)
-            {
-                f.write(meshes[remaps[id].meshes[i]]->offset);
-            }
-        }
-
-/*
-        LEVELS_LOOP()
-        {
-            //header.anims = f.align4();
-            f.writeObj(level->anims, level->animsCount);
-
-            //header.states = f.align4();
-            for (int32 i = 0; i < level->statesCount; i++)
-            {
-                const TR1_PC::AnimState* state = level->states + i;
-
-                AnimState comp;
-                comp.state = uint8(state->state);
-                comp.rangesCount = uint8(state->rangesCount);
-                comp.rangesStart = state->rangesStart;
-
-                comp.write(f);
-            }
-
-            //header.ranges = f.align4();
-            f.writeObj(level->ranges, level->rangesCount);
-
-            //header.commands = f.align4();
-            f.write(level->commands, level->commandsCount);
-
-            //header.nodes = f.align4();
-            for (int32 i = 0; i < level->nodesDataSize / 4; i++)
-            {
-                const TR1_PC::Node* node = (TR1_PC::Node*)(level->nodesData + i * 4);
-
-                ASSERT(node->pos.x > -32768);
-                ASSERT(node->pos.x <  32767);
-                ASSERT(node->pos.y > -32768);
-                ASSERT(node->pos.y <  32767);
-                ASSERT(node->pos.z > -32768);
-                ASSERT(node->pos.z <  32767);
-                ASSERT(node->flags < 0xFFFF);
-
-                Node comp;
-                comp.flags = uint16(node->flags);
-                comp.pos.x = int16(node->pos.x);
-                comp.pos.y = int16(node->pos.y);
-                comp.pos.z = int16(node->pos.z);
-
-                comp.write(f);
-            }
-
-            //header.frameData = f.align4();
-            f.write(level->frameData, level->frameDataSize);
-
-            //header.models = f.align4();
-            for (int32 i = 0; i < level->modelsCount; i++)
-            {
-                const TR1_PC::Model* model = level->models + i;
-
-                Model comp;
-                comp.type = uint8(model->type);
-                comp.count = uint8(model->count);
-                comp.start = model->start;
-                comp.nodeIndex = model->nodeIndex / 4;
-                comp.animIndex = model->animIndex;
-
-                comp.write(f);
-            }
-        }
-*/
-        LEVELS_LOOP()
-        {
-            headers[id].staticMeshes = writeStaticMeshes(f, level);
-        }
-
-/*
-        header.spriteSequences = f.align4();
-        f.writeObj(pc->spriteSequences, pc->spriteSequencesCount);
-*/
-
-    // fixed cameras
-        LEVELS_LOOP()
-        {
-            headers[id].cameras = writeCameras(f, level);
-        }
-        
-    // static sounds
-        LEVELS_LOOP()
-        {
-            headers[id].soundSources = writeSoundSources(f, level);
-        }
-
-    // boxes
-        LEVELS_LOOP()
-        {
-            headers[id].boxes = writeBoxes(f, level);
-        }
-
-    // overlaps
-        LEVELS_LOOP()
-        {
-            headers[id].overlaps = writeOverlaps(f, level);
-        }
-
-    // zones
-        LEVELS_LOOP()
-        {
-            writeZones(f, level, headers[id].zones[0]);
-        }
-
-    // animated textures
-        LEVELS_LOOP()
-        {
-            headers[id].animTexData = writeAnimTex(f, level, &remaps[id]);
-        }
-
-    // items
-        LEVELS_LOOP()
-        {
-            headers[id].items = writeItems(f, level);
-        }
-
-    // animated camera frames
-        LEVELS_LOOP()
-        {
-            headers[id].cameraFrames = writeCameraFrames(f, level);
-        }
-
-    /*
-        for (int32 i = 0; i < pc->soundOffsetsCount; i++)
-        {
-            uint8* ptr = pc->soundData + pc->soundOffsets[i];
-            int32 size = *(int32*)(ptr + 40);
-            uint8* src = ptr + 44;
-            uint8* dst = ptr;
-
-            while ((dst - pc->soundData) % 4 != 0) {
-                dst++;
-            }
-            dst += 4;
-
-            for (int32 j = 0; j < size; j++)
-            {
-                dst[j] = src[j];
-            }
-
-            while ((size % 4) != 0)
-            {
-                dst[size] = dst[size - 1];
-                size++;
-            }
-
-            dst -= 4;
-            *(int32*)dst = size;
-
-            pc->soundOffsets[i] = dst - pc->soundData;
-        }
-
-        header.soundMap = f.align4();
-        f.write(pc->soundMap, 256);
-
-        header.soundInfos = f.align4();
-        f.writeObj(pc->soundInfo, pc->soundInfoCount);
-
-        header.soundData = f.align4();
-        f.write(pc->soundData, pc->soundDataSize);
-
-        header.soundOffsets = f.align4();
-        f.write(pc->soundOffsets, pc->soundOffsetsCount);
-
-        f.setPos(0);
-        header.write(f);
-    */
-        f.writeRaw(headers);
-    }
-
-    //#define GBA_WAD
-
     void process(const char* dir, TR1_PC** pc, TR1_PSX** psx)
     {
         roomVerticesCount = 0;
         roomVertices = new RoomVertex[MAX_ROOM_VERTICES];
 
         char buf[256];
-    #ifdef GBA_WAD
-        sprintf(buf, "%s/TR1.WAD", dir);
-        FileStream f(buf, true);
-            
-        if (!f.isValid()) {
-            printf("can't save \"%s\"\n", buf);
-            return;
-        }
 
-        convertWAD(f, pc, psx);
-    #else
         for (int32 i = 0; i < LVL_MAX; i++)
         {
             sprintf(buf, "%s/%s.PKD", dir, levelNames[i]);
             FileStream f(buf, true);
+            f.bigEndian = true;
             
             if (!f.isValid()) {
                 printf("can't save \"%s\"\n", buf);
                 continue;
             }
 
-            convertGBA(f, pc[i]);
+            convert32X(f, pc[i]);
         }
-
-        // title screen
-        convertScreen(dir, "TITLE", pc[LVL_TR1_TITLE]->palette);
-
-        // audio tracks
-        {
-            sprintf(buf, "%s/TRACKS.IMA", dir);
-            FileStream f(buf, true);
-            convertTracks(f, "tracks/conv_demo");
-        }
-    #endif
 
         delete[] roomVertices;
     }

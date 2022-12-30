@@ -1,7 +1,7 @@
 #ifndef H_COMMON
 #define H_COMMON
 //#define STATIC_ITEMS
-#define PROFILING
+//#define PROFILING
 #ifdef PROFILING
     #define STATIC_ITEMS
     #define PROFILE_FRAMETIME
@@ -84,6 +84,8 @@
     #define FRAME_HEIGHT 160
 
     #define USE_FMT     (LVL_FMT_PKD)
+    #define USE_VRAM_MESH // experimental
+    //#define USE_VRAM_ROOM // experimental
 
     #include <tonc.h>
 #elif defined(__NDS__)
@@ -208,8 +210,6 @@
 #include <math.h>
 #include <limits.h>
 
-#define VRAM_WIDTH   (FRAME_WIDTH/2)    // in shorts
-
 #ifndef USE_FMT
     #define USE_FMT (LVL_FMT_PHD | LVL_FMT_PSX | LVL_FMT_SAT | LVL_FMT_TR2 | LVL_FMT_TR4)
 #endif
@@ -225,7 +225,7 @@
 // the maximum of active enemies
     #define MAX_ENEMIES 3
 // visibility distance
-    #define VIEW_DIST (1024 * 10)
+    #define VIEW_DIST (10 << 10)
 // skip collideSpheres for enemies
     #define FAST_HITMASK
 #endif
@@ -244,7 +244,7 @@
 // set the maximum number of simultaneously played channels
     #define SND_CHANNELS 4
 // visibility distance
-    #define VIEW_DIST (1024 * 10)
+    #define VIEW_DIST (10 << 10)
 // skip collideSpheres for enemies
     #define FAST_HITMASK
 #endif
@@ -259,7 +259,7 @@
 // the maximum of active enemies
     #define MAX_ENEMIES 3
 // visibility distance
-    #define VIEW_DIST (1024 * 10)
+    #define VIEW_DIST (10 << 10)
 // skip collideSpheres for enemies
     #define FAST_HITMASK
 #endif
@@ -379,18 +379,20 @@ X_INLINE int32 abs(int32 x) {
 
 #if defined(__WIN32__) || defined(__GBA_WIN__)
     #define ASSERT(x) { if (!(x)) { DebugBreak(); } }
+    #define STATIC_ASSERT(x) typedef char static_assert_##__COUNTER__[(x) ? 1 : -1]
 #else
     #define ASSERT(x)
+    #define STATIC_ASSERT(x)
 #endif
 
 #if defined(__GBA_WIN__)
-    extern uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    extern uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #elif defined(__GBA__)
     extern uint32 fb;
 #elif defined(__TNS__)
-    extern uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    extern uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #elif defined(__DOS__)
-    extern uint16 fb[VRAM_WIDTH * FRAME_HEIGHT];
+    extern uint16 fb[FRAME_WIDTH * FRAME_HEIGHT];
 #endif
 
 #define STATIC_MESH_FLAG_NO_COLLISION   1
@@ -398,6 +400,10 @@ X_INLINE int32 abs(int32 x) {
 #define MAX_STATIC_MESH_RADIUS          (5 * 1024)
 
 extern int32 fps;
+
+#if defined(USE_VRAM_MESH) || defined(USE_VRAM_ROOM)
+extern uint8* vramPtr;
+#endif
 
 #ifndef F16_SHIFT
     #define F16_SHIFT 0
@@ -507,9 +513,11 @@ extern int32 fps;
 #define FOV_SHIFT       3
 #define FOG_SHIFT       1
 #define FOG_MAX         VIEW_DIST
-#define FOG_MIN         (FOG_MAX - (8192 >> FOG_SHIFT))
+#define FOG_MIN         (FOG_MAX - 2048)
 #define VIEW_MIN_F      (64 << FIXED_SHIFT)
 #define VIEW_MAX_F      (VIEW_DIST << FIXED_SHIFT)
+
+#define MESH_SHIFT      2
 
 #define TEX_ATTR_AKILL  1
 
@@ -641,13 +649,11 @@ struct vec3i {
     X_INLINE vec3i  operator + (const vec3i &v) const { return create(x + v.x, y + v.y, z + v.z); }
     X_INLINE vec3i  operator - (const vec3i &v) const { return create(x - v.x, y - v.y, z - v.z); }
     X_INLINE vec3i  operator * (int32 s) const { return create(x * s, y * s, z * s); }
-    X_INLINE vec3i  operator / (int32 s) const { return create(x / s, y / s, z / s); }
     X_INLINE bool   operator == (const vec3i &v) const { return x == v.x && y == v.y && z == v.z; }
     X_INLINE bool   operator != (const vec3i &v) const { return x != v.x || y != v.y || z != v.z; }
     X_INLINE vec3i& operator += (const vec3i &v) { x += v.x; y += v.y; z += v.z; return *this; }
     X_INLINE vec3i& operator -= (const vec3i &v) { x -= v.x; y -= v.y; z -= v.z; return *this; }
     X_INLINE vec3i& operator *= (int32 s) { x *= s; y *= s; z *= s; return *this; }
-    X_INLINE vec3i& operator /= (int32 s) { x /= s; y /= s; z /= s; return *this; }
 };
 
 #define _vec3i(x,y,z) vec3i::create(x, y, z)
@@ -682,45 +688,60 @@ struct Matrix
 
 struct RoomQuad
 {
-#ifdef __3DO__
+#if defined(__3DO__)
     uint32 flags;
     uint16 indices[4];
+#elif defined(__32X__)
+    uint32 flags;
+    int8 indices[4];
 #else
+    int8 indices[4];
     uint16 flags;
-    uint16 indices[4];
+    uint16 padding;
 #endif
 };
 
 struct RoomTriangle
 {
-#ifdef __3DO__
+#if defined(__3DO__)
     uint32 flags;
     uint16 indices[4];
-#else
+#elif defined(__32X__)
     uint16 flags;
     uint16 indices[3];
+#else
+    uint16 indices[3];
+    uint16 flags;
 #endif
 };
 
 struct MeshQuad
 {
-#ifdef __3DO__
+#if defined(__3DO__)
     uint32 flags;
     uint32 indices;
-#else
+#elif defined(__32X__)
     uint16 flags;
     uint8  indices[4];
+#else
+    int8 indices[4];
+    uint16 flags;
+    uint16 padding;
 #endif
 };
 
 struct MeshTriangle
 {
-#ifdef __3DO__
+#if defined(__3DO__)
     uint32 flags;
     uint32 indices;
-#else
+#elif defined(__32X__)
     uint16 flags;
     uint8  indices[4];
+#else
+    int8 indices[4];
+    uint16 flags;
+    uint16 padding;
 #endif
 };
 
@@ -785,7 +806,7 @@ struct Face
 {
     uint32 flags;
     Face* next;
-    uint16 indices[4];
+    int16 indices[4];
 };
 #endif
 
@@ -2699,6 +2720,7 @@ vec3i boxPushOut(const AABBi &a, const AABBi &b);
         void matrixRotateZ_asm(int32 angle);
         void matrixRotateYQ_asm(int32 quadrant);
         void matrixRotateYXZ_asm(int32 angleX, int32 angleY, int32 angleZ);
+        void matrixFrame_asm(const void* pos, const void* angles);
         void boxTranslate_asm(AABBi &box, int32 x, int32 y, int32 z);
         void boxRotateYQ_asm(AABBi &box, int32 quadrant);
         int32 sphereIsVisible_asm(int32 x, int32 y, int32 z, int32 r);
@@ -2717,6 +2739,7 @@ vec3i boxPushOut(const AABBi &a, const AABBi &b);
     #define matrixRotateZ           matrixRotateZ_asm
     #define matrixRotateYXZ         matrixRotateYXZ_asm
     #define matrixRotateYQ          matrixRotateYQ_asm
+    #define matrixFrame             matrixFrame_asm
     #define boxTranslate            boxTranslate_asm
     #define boxRotateYQ             boxRotateYQ_asm
     #define sphereIsVisible         sphereIsVisible_asm
@@ -2734,6 +2757,7 @@ vec3i boxPushOut(const AABBi &a, const AABBi &b);
     #define matrixRotateZ           matrixRotateZ_c
     #define matrixRotateYXZ         matrixRotateYXZ_c
     #define matrixRotateYQ          matrixRotateYQ_c
+    #define matrixFrame             matrixFrame_c
     #define boxTranslate            boxTranslate_c
     #define boxRotateYQ             boxRotateYQ_c
     #define sphereIsVisible         sphereIsVisible_c
@@ -2751,6 +2775,7 @@ vec3i boxPushOut(const AABBi &a, const AABBi &b);
     void matrixRotateZ_c(int32 angle);
     void matrixRotateYQ_c(int32 quadrant);
     void matrixRotateYXZ_c(int32 angleX, int32 angleY, int32 angleZ);
+    void matrixFrame_c(const void* pos, const void* angles);
 
     void boxTranslate_c(AABBi &box, int32 x, int32 y, int32 z);
     void boxRotateYQ_c(AABBi &box, int32 quadrant);
@@ -2821,24 +2846,34 @@ X_INLINE vec3i matrixGetDir(const Matrix &m)
     return _vec3i(m.e20, m.e21, m.e22);
 }
 
-void matrixFrame(const void* pos, const void* angles);
+void matrixFrame_c(const void* pos, const void* angles);
 void matrixFrameLerp(const void* pos, const void* anglesA, const void* anglesB, int32 delta, int32 rate);
 void matrixSetView(const vec3i &pos, int32 angleX, int32 angleY);
 
+#if defined(__GBA__) || defined(__GBA_WIN__)
+#define renderInit()
+#define renderFree()
+#define renderSwap()
+#define renderLevelInit()
+#define renderLevelFree()
+#else
 void renderInit();
 void renderFree();
 void renderSwap();
 void renderLevelInit();
 void renderLevelFree();
+#endif
+
 void setViewport(const RectMinMax &vp);
 void setPaletteIndex(int32 index);
 void clear();
-void renderRoom(const Room* room);
+void renderRoom(Room* room);
 void renderMesh(const Mesh* mesh);
 void renderShadow(int32 x, int32 z, int32 sx, int32 sz);
 void renderSprite(int32 vx, int32 vy, int32 vz, int32 vg, int32 index);
 void renderGlyph(int32 vx, int32 vy, int32 index);
-void renderBorder(int32 x, int32 y, int32 width, int32 height, int32 shade, int32 color1, int32 color2, int32 z);
+void renderFill(int32 x, int32 y, int32 width, int32 height, int32 shade, int32 z);
+void renderBorder(int32 x, int32 y, int32 width, int32 height, int32 color1, int32 color2, int32 z);
 void renderBar(int32 x, int32 y, int32 width, int32 value, BarType type);
 void renderBackground(const void* background);
 void* copyBackground();
@@ -2880,7 +2915,7 @@ int32 doTutorial(ItemObj* lara, int32 track);
 void sndInit();
 void sndInitSamples();
 void sndFreeSamples();
-void sndFill(uint8* buffer, int32 count);
+void sndFill(int8* buffer);
 void* sndPlaySample(int32 index, int32 volume, int32 pitch, int32 mode);
 void sndPlayTrack(int32 track);
 bool sndTrackIsPlaying();
