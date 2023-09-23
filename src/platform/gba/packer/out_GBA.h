@@ -620,7 +620,7 @@ struct out_GBA
             radius = *(int16*)ptr; ptr += sizeof(radius);
             uint16 flags = *(uint16*)ptr; ptr += sizeof(flags);
 
-            vCount = *(int16*)ptr; ptr += 2;
+            vCount = (uint8)*(int16*)ptr; ptr += 2;
             vertices = (vec3s*)ptr;
             ptr += vCount * sizeof(vec3s);
 
@@ -2189,7 +2189,7 @@ struct out_GBA
     void convertTracks(FileStream &f, const char* from)
     {
         char buf[256];
-        sprintf(buf, "%s/*.ima", from);
+        sprintf(buf, "%s/*.ad4", from);
 
         WIN32_FIND_DATA fd;
         HANDLE h = FindFirstFile(buf, &fd);
@@ -2199,7 +2199,7 @@ struct out_GBA
 
         struct Track {
             int32 size;
-            char* data;
+            uint8* data;
         };
         Track tracks[MAX_TRACKS];
         memset(tracks, 0, sizeof(tracks));
@@ -2209,9 +2209,10 @@ struct out_GBA
             if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
             {
                 const char* src = fd.cFileName;
+                const char* srcEnd = strrchr(src, '.');
                 char* dst = buf;
 
-                while (*src)
+                while (src < srcEnd)
                 {
                     if (*src >= '0' && *src <= '9')
                     {
@@ -2237,12 +2238,11 @@ struct out_GBA
                     fseek(f, 0, SEEK_END);
                     int32 size = ftell(f);
                     fseek(f, 0, SEEK_SET);
-                    tracks[index].data = new char[size + 4];
+                    tracks[index].data = new uint8[size];
                     fread(tracks[index].data, 1, size, f);
                     fclose(f);
 
-                    tracks[index].size = ALIGN(*((int32*)tracks[index].data + 2), 4) - 4;
-
+                    tracks[index].size = size; // ad4 tool encodes 32-bit chunks, so no need to align
                     ASSERT(tracks[index].size % 4 == 0);
                 }
             }
@@ -2268,7 +2268,7 @@ struct out_GBA
         {
             if (tracks[i].size == 0)
                 continue;
-            f.write((uint8*)tracks[i].data + 16, tracks[i].size);
+            f.write(tracks[i].data, tracks[i].size);
             delete[] tracks[i].data;
         }
     }
@@ -2752,7 +2752,7 @@ struct out_GBA
 
         // audio tracks
         {
-            sprintf(buf, "%s/TRACKS.IMA", dir);
+            sprintf(buf, "%s/TRACKS.AD4", dir);
             FileStream f(buf, true);
             convertTracks(f, "tracks/conv_demo");
         }

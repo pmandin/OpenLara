@@ -8,15 +8,16 @@ volume  .req r3
 data    .req r4
 buffer  .req r5
 tmp     .req r6
+mask    .req r7
 last    .req r12
 tmpSP   .req last
 out     .req size
 
 .macro clamp
-    // Vanadium's clamp trick (-128..127)
-    mov tmp, out, asr #31  // tmp <- 0xffffffff
-    cmp tmp, out, asr #7   // not equal
-    eorne out, tmp, #0x7F  // out <- 0xffffff80
+    // Aikku93's quick-and-dirty clamp (-128..+127)
+    // This only works for inputs of -256..+255
+    teq out, out, lsl #32-8       // If the sign of 8bit value does not match...
+    eormi out, mask, out, asr #31 // ... then clip using the real sign
 .endm
 
 .macro calc_last
@@ -73,7 +74,8 @@ sndPCM_fill_asm:
 .global sndPCM_mix_asm
 sndPCM_mix_asm:
     mov tmpSP, sp
-    stmfd sp!, {r4-r6} // tmp reg required
+    stmfd sp!, {r4-r7} // tmp reg required
+    mov mask, #127
 
     ldmia tmpSP, {data, buffer}
 
@@ -89,7 +91,7 @@ sndPCM_mix_asm:
     cmp pos, last
     blt .loop_mix
 
-    ldmfd sp!, {r4-r6}
+    ldmfd sp!, {r4-r7}
     bx lr
 
 .global sndClear_asm
